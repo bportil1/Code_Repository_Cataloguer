@@ -4,11 +4,6 @@ A local Python repository explorer and organizer. It retains the containment tre
 definition search, source preview, and multi-resolution dependency views, and adds
 a Flask backend for safe object-level file changes.
 
-## Implemented refactor
-
-Select a top-level function, choose another existing Python module, preview the
-unified diffs, and apply the move.
-
 The backend:
 
 - uses the indexed function node and AST line range
