@@ -1,177 +1,789 @@
 (() => {
   const catalog = window.CODEBASE_CATALOG;
-  const state = { query: "" };
-  const moduleByPath = new Map(catalog.modules.map(module => [module.path, module]));
-  const definitions = [];
 
-  for (const module of catalog.modules) {
-    for (const fn of module.functions) definitions.push({ ...fn, file: module.path });
-    for (const cls of module.classes) {
-      definitions.push({
-        name: cls.name, qualified_name: cls.qualified_name, kind: "class",
-        parent: null, line_start: cls.line_start, line_end: cls.line_end,
-        file: module.path, source: cls
-      });
-      for (const method of cls.methods) definitions.push({ ...method, file: module.path });
-    }
+  if (!catalog) {
+    throw new Error("window.CODEBASE_CATALOG is not defined.");
   }
 
-  document.getElementById("project-name").textContent = `${catalog.project_name} Codebase Catalog`;
-  document.getElementById("project-root").textContent = catalog.project_root;
-
-  const summaryLabels = {
-    directories: "Directories", files: "Files", python_files: "Python files",
-    classes: "Classes", functions: "Functions", methods: "Methods",
-    internal_imports: "Internal imports", external_imports: "External packages"
+  const state = {
+    query: "",
+    selectedNodeId: catalog.root_node_id,
+    dependencySearch: "",
+    selectedRelationshipKey: null,
   };
-  document.getElementById("summary").innerHTML = Object.entries(summaryLabels)
-    .map(([key, label]) => `<div class="summary-card"><strong>${catalog.summary[key]}</strong><span>${label}</span></div>`)
-    .join("");
 
-  function matches(...values) {
-    if (!state.query) return true;
-    const haystack = values.filter(Boolean).join(" ").toLowerCase();
-    return haystack.includes(state.query);
+  const nodes = new Map(Object.entries(catalog.nodes || {}));
+  const relationships = catalog.relationships || [];
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
   }
 
-  function renderTreeEntry(entry, isRoot = false) {
+  function node(nodeId) {
+    return nodes.get(nodeId);
+  }
+
+  function nodeLabel(item) {
+    if (!item) return "Unknown";
+    if (item.node_type === "function" || item.node_type === "method") {
+      return `${item.name}()`;
+    }
+    return item.qualified_name || item.name;
+  }
+
+  function shortNodeLabel(item) {
+    if (!item) return "Unknown";
+    if (item.node_type === "function" || item.node_type === "method") {
+      return `${item.name}()`;
+    }
+    return item.name;
+  }
+
+  function nodeIcon(item) {
+    const icons = {
+      project: "P",
+      directory: "D",
+      file: "•",
+      module: "M",
+      class: "C",
+      method: "m",
+      function: "F",
+      external: "E",
+    };
+    return icons[item?.node_type] || "•";
+  }
+
+  function searchableText(item) {
+    return [
+      item.name,
+      item.qualified_name,
+      item.path,
+      item.node_type,
+      item.metadata?.signature,
+      item.metadata?.docstring,
+      ...(item.metadata?.imports || []).flatMap(value => [
+        value.module,
+        ...(value.names || []),
+      ]),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+  }
+
+  function isDescendant(candidateId, ancestorId) {
+    let current = node(candidateId);
+    while (current?.parent_id) {
+      if (current.parent_id === ancestorId) return true;
+      current = node(current.parent_id);
+    }
+    return false;
+  }
+
+  function subtreeMatches(item) {
+    if (!state.query) return true;
+    if (searchableText(item).includes(state.query)) return true;
+    return (item.children || []).some(childId => {
+      const child = node(childId);
+      return child ? subtreeMatches(child) : false;
+    });
+  }
+
+  function selectTreeButton(button) {
+    document
+      .querySelectorAll(".tree-entry.selected")
+      .forEach(item => item.classList.remove("selected"));
+    if (button) button.classList.add("selected");
+  }
+
+  function renderTreeNode(nodeId, isRoot = false) {
+    const item = node(nodeId);
     const li = document.createElement("li");
+    li.className = `tree-node tree-node-${item.node_type}`;
+    li.dataset.nodeId = item.id;
+
     const row = document.createElement("div");
     row.className = "tree-row";
-    const isDirectory = entry.entry_type === "directory";
 
-    if (isDirectory) {
+    const hasChildren = (item.children || []).length > 0;
+    let childList = null;
+
+    if (hasChildren) {
       const toggle = document.createElement("button");
       toggle.className = "tree-toggle";
-      toggle.textContent = "▾";
-      toggle.setAttribute("aria-label", `Toggle ${entry.name}`);
-      row.appendChild(toggle);
+      toggle.type = "button";
 
-      const label = document.createElement("button");
-      label.className = "tree-item";
-      label.textContent = `📁 ${entry.name}`;
-      label.addEventListener("click", () => showDirectory(entry));
-      row.appendChild(label);
-      li.appendChild(row);
+      const expanded =
+        isRoot ||
+        item.node_type === "project" ||
+        item.node_type === "directory";
 
-      const children = document.createElement("ul");
-      children.className = `tree-list tree-children${isRoot ? " root" : ""}`;
-      for (const child of entry.children) children.appendChild(renderTreeEntry(child));
-      li.appendChild(children);
-      toggle.addEventListener("click", () => {
-        children.classList.toggle("collapsed");
-        toggle.textContent = children.classList.contains("collapsed") ? "▸" : "▾";
+      toggle.textContent = expanded ? "▾" : "▸";
+      toggle.setAttribute("aria-expanded", String(expanded));
+
+      toggle.addEventListener("click", event => {
+        event.stopPropagation();
+        const next = toggle.getAttribute("aria-expanded") !== "true";
+        toggle.setAttribute("aria-expanded", String(next));
+        toggle.textContent = next ? "▾" : "▸";
+        childList.classList.toggle("collapsed", !next);
       });
+
+      row.appendChild(toggle);
     } else {
       const spacer = document.createElement("span");
-      spacer.className = "tree-toggle";
+      spacer.className = "tree-toggle tree-toggle-spacer";
       row.appendChild(spacer);
-      const label = document.createElement("button");
-      label.className = "tree-item";
-      label.textContent = `${entry.name.endsWith(".py") ? "🐍" : "📄"} ${entry.name}`;
-      label.dataset.search = `${entry.name} ${entry.path}`.toLowerCase();
-      label.addEventListener("click", () => showFile(entry.path, label));
-      row.appendChild(label);
-      li.appendChild(row);
     }
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "tree-entry";
+    button.dataset.nodeId = item.id;
+
+    const icon = document.createElement("span");
+    icon.className = `tree-icon tree-icon-${item.node_type}`;
+    icon.textContent = nodeIcon(item);
+
+    const label = document.createElement("span");
+    label.className = "tree-label";
+    label.textContent = shortNodeLabel(item);
+
+    button.append(icon, label);
+    button.addEventListener("click", () => {
+      state.selectedNodeId = item.id;
+      selectTreeButton(button);
+      showNodeDetails(item.id);
+    });
+
+    row.appendChild(button);
+    li.appendChild(row);
+
+    if (hasChildren) {
+      childList = document.createElement("ul");
+      childList.className = "tree-list tree-children";
+
+      if (
+        !isRoot &&
+        item.node_type !== "project" &&
+        item.node_type !== "directory"
+      ) {
+        childList.classList.add("collapsed");
+      }
+
+      for (const childId of item.children) {
+        childList.appendChild(renderTreeNode(childId));
+      }
+      li.appendChild(childList);
+    }
+
     return li;
   }
 
-  const treeRoot = document.createElement("ul");
-  treeRoot.className = "tree-list root";
-  treeRoot.appendChild(renderTreeEntry(catalog.tree, true));
-  document.getElementById("tree").appendChild(treeRoot);
+  function applyTreeFilter(nodeId, element) {
+    const item = node(nodeId);
+    const visible = subtreeMatches(item);
+    element.classList.toggle("hidden", !visible);
 
-  function selectTreeItem(element) {
-    document.querySelectorAll(".tree-item.selected").forEach(item => item.classList.remove("selected"));
-    if (element) element.classList.add("selected");
+    if (!visible) return;
+
+    const children = item.children || [];
+    const childElements = Array.from(
+      element.querySelector(":scope > .tree-children")?.children || []
+    );
+
+    children.forEach((childId, index) => {
+      if (childElements[index]) {
+        applyTreeFilter(childId, childElements[index]);
+      }
+    });
+
+    if (state.query && children.length) {
+      const list = element.querySelector(":scope > .tree-children");
+      const toggle = element.querySelector(
+        ":scope > .tree-row > .tree-toggle"
+      );
+      if (list) list.classList.remove("collapsed");
+      if (toggle?.tagName === "BUTTON") {
+        toggle.textContent = "▾";
+        toggle.setAttribute("aria-expanded", "true");
+      }
+    }
   }
 
-  function showDirectory(entry) {
-    selectTreeItem(null);
+  function relationshipDirectionFor(nodeId) {
+    return {
+      outgoing: relationships.filter(edge => edge.source_id === nodeId),
+      incoming: relationships.filter(edge => edge.target_id === nodeId),
+    };
+  }
+
+  function localDependencyHtml(nodeId) {
+    const { outgoing, incoming } = relationshipDirectionFor(nodeId);
+
+    const renderList = values =>
+      values.length
+        ? `<ul class="list">${values
+            .map(edge => {
+              const other =
+                edge.source_id === nodeId
+                  ? node(edge.target_id)
+                  : node(edge.source_id);
+              return `
+                <li>
+                  <button class="link-button" data-open-node="${escapeHtml(
+                    other.id
+                  )}">
+                    ${escapeHtml(nodeLabel(other))}
+                  </button>
+                  <span class="badge">${escapeHtml(
+                    edge.relationship_type
+                  )}</span>
+                </li>
+              `;
+            })
+            .join("")}</ul>`
+        : `<div class="empty-state compact">None recorded.</div>`;
+
+    return `
+      <div class="local-dependencies">
+        <section>
+          <h3>Uses / outgoing</h3>
+          ${renderList(outgoing)}
+        </section>
+        <section>
+          <h3>Used by / incoming</h3>
+          ${renderList(incoming)}
+        </section>
+      </div>
+    `;
+  }
+
+  function showNodeDetails(nodeId) {
+    const item = node(nodeId);
+    if (!item) return;
+
+    const metadata = item.metadata || {};
+    const source = metadata.source_code
+      ? `
+        <h3>Source</h3>
+        <pre class="source-code"><code>${escapeHtml(
+          metadata.source_code
+        )}</code></pre>
+      `
+      : "";
+
+    const importList = (metadata.imports || []).length
+      ? `
+        <h3>Imports</h3>
+        <ul class="list">
+          ${(metadata.imports || [])
+            .map(value => {
+              const prefix = ".".repeat(value.level || 0);
+              const names = value.names?.length
+                ? `: ${value.names.join(", ")}`
+                : "";
+              return `<li><code>${escapeHtml(
+                `${prefix}${value.module || ""}${names}`
+              )}</code> <small>line ${value.line}</small></li>`;
+            })
+            .join("")}
+        </ul>
+      `
+      : "";
+
+    const rows = [
+      ["Type", item.node_type],
+      ["Qualified name", item.qualified_name],
+      ["Path", item.path],
+      ["Signature", metadata.signature],
+      [
+        "Lines",
+        metadata.line_start
+          ? `${metadata.line_start}–${metadata.line_end}`
+          : null,
+      ],
+      ["Line count", metadata.line_count],
+      ["Bases", metadata.bases?.join(", ")],
+      ["Decorators", metadata.decorators?.join(", ")],
+      ["Docstring", metadata.docstring],
+      ["Size", metadata.size_bytes ? `${metadata.size_bytes} bytes` : null],
+      ["Parse error", metadata.parse_error],
+    ].filter(([, value]) => value !== null && value !== undefined && value !== "");
+
     document.getElementById("details").innerHTML = `
-      <h3>${entry.name} <span class="badge">directory</span></h3>
-      <dl class="metadata"><dt>Path</dt><dd><code>${entry.path || "."}</code></dd><dt>Items</dt><dd>${entry.children.length}</dd></dl>`;
+      <h3>
+        ${escapeHtml(nodeLabel(item))}
+        <span class="badge">${escapeHtml(item.node_type)}</span>
+      </h3>
+
+      <dl class="metadata">
+        ${rows
+          .map(
+            ([label, value]) => `
+              <dt>${escapeHtml(label)}</dt>
+              <dd>${escapeHtml(value)}</dd>
+            `
+          )
+          .join("")}
+      </dl>
+
+      ${importList}
+      ${localDependencyHtml(item.id)}
+      ${source}
+    `;
+
+    bindOpenNodeLinks();
   }
 
-  function showFile(path, selectedElement = null) {
-    selectTreeItem(selectedElement);
-    const module = moduleByPath.get(path);
-    if (!module) {
-      document.getElementById("details").innerHTML = `<h3>${path.split("/").pop()} <span class="badge">file</span></h3><dl class="metadata"><dt>Path</dt><dd><code>${path}</code></dd></dl>`;
+  function bindOpenNodeLinks() {
+    document.querySelectorAll("[data-open-node]").forEach(button => {
+      button.addEventListener("click", () => {
+        const targetId = button.dataset.openNode;
+        state.selectedNodeId = targetId;
+        showNodeDetails(targetId);
+        setView("repository");
+
+        const treeButton = document.querySelector(
+          `.tree-entry[data-node-id="${CSS.escape(targetId)}"]`
+        );
+        selectTreeButton(treeButton);
+        treeButton?.scrollIntoView({ block: "nearest" });
+      });
+    });
+  }
+
+  function ancestors(nodeId) {
+    const values = [];
+    let current = node(nodeId);
+    while (current) {
+      values.push(current);
+      current = current.parent_id ? node(current.parent_id) : null;
+    }
+    return values;
+  }
+
+  function nearestAncestor(nodeId, types) {
+    return ancestors(nodeId).find(value => types.includes(value.node_type));
+  }
+
+  function directoryOwner(nodeId) {
+    const item = nearestAncestor(nodeId, ["directory"]);
+    return item || node(catalog.root_node_id);
+  }
+
+  function moduleOwner(nodeId) {
+    return nearestAncestor(nodeId, ["module"]);
+  }
+
+  function classOwner(nodeId) {
+    return nearestAncestor(nodeId, ["class"]);
+  }
+
+  function functionOwner(nodeId) {
+    return nearestAncestor(nodeId, ["function", "method"]);
+  }
+
+  function aggregateOwner(nodeId, level) {
+    if (level === "directory") return directoryOwner(nodeId);
+    if (level === "module") return moduleOwner(nodeId);
+    if (level === "class") return classOwner(nodeId) || moduleOwner(nodeId);
+    if (level === "function") {
+      return functionOwner(nodeId) || classOwner(nodeId) || moduleOwner(nodeId);
+    }
+    return node(nodeId);
+  }
+
+  function edgeInScope(edge, scope) {
+    if (scope === "project") return true;
+    const selected = state.selectedNodeId;
+    if (!selected) return true;
+
+    if (scope === "selected-node") {
+      return edge.source_id === selected || edge.target_id === selected;
+    }
+
+    return (
+      edge.source_id === selected ||
+      edge.target_id === selected ||
+      isDescendant(edge.source_id, selected) ||
+      isDescendant(edge.target_id, selected)
+    );
+  }
+
+  function edgeMatchesDirection(edge, direction) {
+    if (direction === "both" || !state.selectedNodeId) return true;
+    if (direction === "outgoing") {
+      return edge.source_id === state.selectedNodeId ||
+        isDescendant(edge.source_id, state.selectedNodeId);
+    }
+    return edge.target_id === state.selectedNodeId ||
+      isDescendant(edge.target_id, state.selectedNodeId);
+  }
+
+  function aggregateRelationships() {
+    const scope = document.getElementById("dependency-scope").value;
+    const level = document.getElementById("dependency-level").value;
+    const direction = document.getElementById("dependency-direction").value;
+
+    const filtered = relationships.filter(
+      edge =>
+        edgeInScope(edge, scope) &&
+        edgeMatchesDirection(edge, direction)
+    );
+
+    const groups = new Map();
+
+    for (const edge of filtered) {
+      let source = node(edge.source_id);
+      let target = node(edge.target_id);
+
+      if (level !== "system") {
+        source = aggregateOwner(edge.source_id, level);
+        target =
+          target?.node_type === "external"
+            ? target
+            : aggregateOwner(edge.target_id, level);
+      } else {
+        source = moduleOwner(edge.source_id) || source;
+        target =
+          target?.node_type === "external"
+            ? target
+            : moduleOwner(edge.target_id) || target;
+      }
+
+      if (!source || !target || source.id === target.id) continue;
+
+      const key = `${source.id}|${target.id}|${edge.relationship_type}`;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          key,
+          source,
+          target,
+          relationshipType: edge.relationship_type,
+          edges: [],
+        });
+      }
+      groups.get(key).edges.push(edge);
+    }
+
+    return [...groups.values()]
+      .filter(group => {
+        if (!state.dependencySearch) return true;
+        return [
+          nodeLabel(group.source),
+          nodeLabel(group.target),
+          group.relationshipType,
+          ...group.edges.flatMap(edge => Object.values(edge.evidence || {})),
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(state.dependencySearch);
+      })
+      .sort((a, b) => {
+        const sourceCompare = nodeLabel(a.source).localeCompare(
+          nodeLabel(b.source)
+        );
+        return sourceCompare || nodeLabel(a.target).localeCompare(nodeLabel(b.target));
+      });
+  }
+
+  function renderDependencyDetails(group) {
+    const target = document.getElementById("dependency-details");
+    if (!group) {
+      target.className = "empty-state";
+      target.textContent =
+        "Select a relationship to inspect its original local evidence.";
       return;
     }
-    const importItems = module.imports.map(item => {
-      const names = item.names.length ? `: ${item.names.join(", ")}` : "";
-      const prefix = ".".repeat(item.level);
-      return `<li><code>${prefix}${item.module}${names}</code> <small>line ${item.line}</small></li>`;
-    }).join("") || "<li>None</li>";
-    const definitionItems = [
-      ...module.classes.map(item => `<li><button class="link-button" data-definition="${item.qualified_name}">${item.name}</button> <span class="badge">class</span></li>`),
-      ...module.functions.map(item => `<li><button class="link-button" data-definition="${item.qualified_name}">${item.name}</button> <span class="badge">function</span></li>`)
-    ].join("") || "<li>None</li>";
-    document.getElementById("details").innerHTML = `
-      <h3>${module.module_name} <span class="badge">Python module</span></h3>
-      <dl class="metadata"><dt>Path</dt><dd><code>${module.path}</code></dd><dt>Lines</dt><dd>${module.line_count}</dd><dt>Docstring</dt><dd>${module.docstring || "—"}</dd></dl>
-      <h3>Definitions</h3><ul class="list">${definitionItems}</ul>
-      <h3>Imports</h3><ul class="list">${importItems}</ul>`;
-    bindDefinitionLinks();
+
+    target.className = "";
+    target.innerHTML = `
+      <h3>
+        ${escapeHtml(nodeLabel(group.source))}
+        →
+        ${escapeHtml(nodeLabel(group.target))}
+      </h3>
+      <p>
+        <span class="badge">${escapeHtml(group.relationshipType)}</span>
+        ${group.edges.length} local relationship${group.edges.length === 1 ? "" : "s"}
+      </p>
+
+      <ul class="evidence-list">
+        ${group.edges
+          .map(edge => {
+            const source = node(edge.source_id);
+            const targetNode = node(edge.target_id);
+            const evidence = edge.evidence || {};
+            const location = [
+              evidence.file,
+              evidence.line ? `line ${evidence.line}` : null,
+              evidence.line_start ? `line ${evidence.line_start}` : null,
+            ]
+              .filter(Boolean)
+              .join(", ");
+
+            return `
+              <li>
+                <button class="link-button" data-open-node="${escapeHtml(
+                  source.id
+                )}">${escapeHtml(nodeLabel(source))}</button>
+                →
+                <button class="link-button" data-open-node="${escapeHtml(
+                  targetNode.id
+                )}">${escapeHtml(nodeLabel(targetNode))}</button>
+                <br>
+                <small>
+                  ${escapeHtml(edge.relationship_type)}
+                  ${location ? ` · ${escapeHtml(location)}` : ""}
+                  ${
+                    evidence.expression
+                      ? ` · expression: ${escapeHtml(evidence.expression)}`
+                      : ""
+                  }
+                  ${
+                    evidence.import
+                      ? ` · import: ${escapeHtml(evidence.import)}`
+                      : ""
+                  }
+                </small>
+              </li>
+            `;
+          })
+          .join("")}
+      </ul>
+    `;
+    bindOpenNodeLinks();
   }
 
-  function showDefinition(qualifiedName) {
-    const item = definitions.find(entry => entry.qualified_name === qualifiedName);
-    if (!item) return;
-    const isClass = item.kind === "class";
-    const source = item.source || item;
-    const extras = isClass
-      ? `<dt>Bases</dt><dd>${source.bases?.length ? source.bases.map(value => `<code>${value}</code>`).join(" ") : "—"}</dd>`
-      : `<dt>Signature</dt><dd><code>${item.signature}</code></dd><dt>Parent</dt><dd>${item.parent || "—"}</dd>`;
-    const mentions = !isClass && item.mentions?.length
-      ? `<h3>Names mentioned</h3><p>${item.mentions.map(value => `<code>${value}</code>`).join(" ")}</p>` : "";
-    document.getElementById("details").innerHTML = `
-      <h3>${item.name} <span class="badge">${item.kind}</span></h3>
-      <dl class="metadata"><dt>Qualified name</dt><dd><code>${item.qualified_name}</code></dd><dt>File</dt><dd><code>${item.file}</code></dd><dt>Lines</dt><dd>${item.line_start}–${item.line_end}</dd>${extras}<dt>Docstring</dt><dd>${source.docstring || "—"}</dd></dl>${mentions}`;
-    setView("repository");
-  }
+  function renderDependencies() {
+    const groups = aggregateRelationships();
+    const level = document.getElementById("dependency-level").value;
+    const scope = document.getElementById("dependency-scope").value;
+    const direction = document.getElementById("dependency-direction").value;
 
-  function bindDefinitionLinks() {
-    document.querySelectorAll("[data-definition]").forEach(button => button.addEventListener("click", () => showDefinition(button.dataset.definition)));
+    document.getElementById("dependency-title").textContent =
+      `${level === "system" ? "System" : level[0].toUpperCase() + level.slice(1)} dependencies`;
+
+    const selected = node(state.selectedNodeId);
+    document.getElementById("dependency-context").textContent =
+      `${scope.replaceAll("-", " ")} · ${direction}` +
+      (scope !== "project" && selected
+        ? ` · ${nodeLabel(selected)}`
+        : "");
+
+    document.getElementById("dependency-count").textContent =
+      `${groups.length} relationship${groups.length === 1 ? "" : "s"}`;
+
+    const bySource = new Map();
+    for (const group of groups) {
+      if (!bySource.has(group.source.id)) {
+        bySource.set(group.source.id, {
+          source: group.source,
+          groups: [],
+        });
+      }
+      bySource.get(group.source.id).groups.push(group);
+    }
+
+    const overview = document.getElementById("dependency-overview");
+
+    if (!groups.length) {
+      overview.innerHTML =
+        `<div class="empty-state">No relationships match the current view.</div>`;
+      renderDependencyDetails(null);
+      return;
+    }
+
+    overview.innerHTML = [...bySource.values()]
+      .map(
+        sourceGroup => `
+          <section class="dependency-group">
+            <header>${escapeHtml(nodeLabel(sourceGroup.source))}</header>
+            ${sourceGroup.groups
+              .map(
+                group => `
+                  <button
+                    type="button"
+                    class="relationship-row"
+                    data-relationship-key="${escapeHtml(group.key)}"
+                  >
+                    <span class="relationship-node">
+                      ${escapeHtml(nodeLabel(group.source))}
+                    </span>
+                    <span class="relationship-arrow">→</span>
+                    <span class="relationship-node">
+                      ${escapeHtml(nodeLabel(group.target))}
+                    </span>
+                    <span class="relationship-count">
+                      ${escapeHtml(group.relationshipType)} · ${group.edges.length}
+                    </span>
+                  </button>
+                `
+              )
+              .join("")}
+          </section>
+        `
+      )
+      .join("");
+
+    overview.querySelectorAll("[data-relationship-key]").forEach(button => {
+      button.addEventListener("click", () => {
+        overview
+          .querySelectorAll(".relationship-row.selected")
+          .forEach(row => row.classList.remove("selected"));
+        button.classList.add("selected");
+
+        const group = groups.find(
+          value => value.key === button.dataset.relationshipKey
+        );
+        state.selectedRelationshipKey = group?.key || null;
+        renderDependencyDetails(group);
+      });
+    });
+
+    const selectedGroup = groups.find(
+      group => group.key === state.selectedRelationshipKey
+    );
+    renderDependencyDetails(selectedGroup || null);
   }
 
   function renderDefinitions() {
     const body = document.getElementById("definitions-body");
-    body.innerHTML = "";
-    for (const item of definitions.filter(item => matches(item.name, item.qualified_name, item.kind, item.file, item.parent))) {
-      const row = document.createElement("tr");
-      row.innerHTML = `<td><code>${item.name}</code></td><td>${item.kind}</td><td><code>${item.file}</code></td><td>${item.parent || "—"}</td><td>${item.line_start}–${item.line_end}</td>`;
-      row.addEventListener("click", () => showDefinition(item.qualified_name));
-      body.appendChild(row);
-    }
-  }
+    const definitionTypes = new Set(["class", "function", "method"]);
 
-  function renderDependencies(targetId, dependencyMap) {
-    const target = document.getElementById(targetId);
-    const entries = Object.entries(dependencyMap).filter(([module, dependencies]) => matches(module, ...dependencies));
-    target.innerHTML = entries.map(([module, dependencies]) => `
-      <div class="dep-module"><strong><code>${module}</code></strong><div class="dep-targets">${dependencies.length ? dependencies.map(value => `<code>${value}</code>`).join(" → ") : "None"}</div></div>`).join("") || `<div class="empty-state">No matching entries.</div>`;
+    const values = [...nodes.values()]
+      .filter(item => definitionTypes.has(item.node_type))
+      .filter(item => !state.query || searchableText(item).includes(state.query))
+      .sort((a, b) =>
+        (a.qualified_name || a.name).localeCompare(
+          b.qualified_name || b.name
+        )
+      );
+
+    body.innerHTML = values
+      .map(
+        item => `
+          <tr data-definition-node="${escapeHtml(item.id)}">
+            <td><code>${escapeHtml(item.name)}</code></td>
+            <td>${escapeHtml(item.node_type)}</td>
+            <td><code>${escapeHtml(item.path || "—")}</code></td>
+            <td>${escapeHtml(node(item.parent_id)?.name || "—")}</td>
+            <td>
+              ${
+                item.metadata?.line_start
+                  ? `${item.metadata.line_start}–${item.metadata.line_end}`
+                  : "—"
+              }
+            </td>
+          </tr>
+        `
+      )
+      .join("");
+
+    body.querySelectorAll("[data-definition-node]").forEach(row => {
+      row.addEventListener("click", () => {
+        const targetId = row.dataset.definitionNode;
+        state.selectedNodeId = targetId;
+        showNodeDetails(targetId);
+        setView("repository");
+
+        const button = document.querySelector(
+          `.tree-entry[data-node-id="${CSS.escape(targetId)}"]`
+        );
+        selectTreeButton(button);
+      });
+    });
   }
 
   function setView(name) {
-    document.querySelectorAll(".tab").forEach(tab => tab.classList.toggle("active", tab.dataset.view === name));
-    document.querySelectorAll(".view").forEach(view => view.classList.toggle("active", view.id === `${name}-view`));
+    document.querySelectorAll(".tab").forEach(tab => {
+      tab.classList.toggle("active", tab.dataset.view === name);
+    });
+    document.querySelectorAll(".view").forEach(view => {
+      view.classList.toggle("active", view.id === `${name}-view`);
+    });
+    if (name === "dependencies") renderDependencies();
   }
 
-  document.querySelectorAll(".tab").forEach(tab => tab.addEventListener("click", () => setView(tab.dataset.view)));
+  document.getElementById("project-name").textContent =
+    `${catalog.project_name} Codebase Catalog`;
+  document.getElementById("project-root").textContent = catalog.project_root;
+
+  const summaryLabels = {
+    directories: "Directories",
+    files: "Files",
+    python_files: "Python files",
+    modules: "Modules",
+    classes: "Classes",
+    functions: "Functions",
+    methods: "Methods",
+    relationships: "Relationships",
+  };
+
+  document.getElementById("summary").innerHTML = Object.entries(summaryLabels)
+    .map(
+      ([key, label]) => `
+        <div class="summary-card">
+          <strong>${catalog.summary?.[key] ?? 0}</strong>
+          <span>${label}</span>
+        </div>
+      `
+    )
+    .join("");
+
+  const treeRoot = document.createElement("ul");
+  treeRoot.className = "tree-list root";
+  const renderedRoot = renderTreeNode(catalog.root_node_id, true);
+  treeRoot.appendChild(renderedRoot);
+  document.getElementById("tree").appendChild(treeRoot);
+
+  document.querySelectorAll(".tab").forEach(tab => {
+    tab.addEventListener("click", () => setView(tab.dataset.view));
+  });
+
   document.getElementById("search").addEventListener("input", event => {
     state.query = event.target.value.trim().toLowerCase();
-    document.querySelectorAll(".tree-item[data-search]").forEach(item => item.closest("li").classList.toggle("hidden", !matches(item.dataset.search)));
+    applyTreeFilter(catalog.root_node_id, renderedRoot);
     renderDefinitions();
-    renderDependencies("internal-dependencies", catalog.internal_dependencies);
-    renderDependencies("external-dependencies", catalog.external_dependencies);
+  });
+
+  document.getElementById("dependency-search").addEventListener(
+    "input",
+    event => {
+      state.dependencySearch = event.target.value.trim().toLowerCase();
+      renderDependencies();
+    }
+  );
+
+  [
+    "dependency-scope",
+    "dependency-level",
+    "dependency-direction",
+  ].forEach(id => {
+    document.getElementById(id).addEventListener("change", () => {
+      state.selectedRelationshipKey = null;
+      renderDependencies();
+    });
+  });
+
+  document.getElementById("collapse-tree").addEventListener("click", () => {
+    document.querySelectorAll(".tree-children").forEach((list, index) => {
+      list.classList.toggle("collapsed", index !== 0);
+    });
+    document.querySelectorAll(".tree-toggle").forEach((toggle, index) => {
+      if (toggle.tagName === "BUTTON") {
+        toggle.textContent = index === 0 ? "▾" : "▸";
+        toggle.setAttribute("aria-expanded", String(index === 0));
+      }
+    });
   });
 
   renderDefinitions();
-  renderDependencies("internal-dependencies", catalog.internal_dependencies);
-  renderDependencies("external-dependencies", catalog.external_dependencies);
-  showDirectory(catalog.tree);
+  showNodeDetails(catalog.root_node_id);
 })();

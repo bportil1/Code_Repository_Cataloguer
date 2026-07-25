@@ -1,6 +1,5 @@
-from .catalog_builder import build_catalog
-from .indexer import index_python_files
-from .report_builder import build_report
-from .scanner import scan_project
+"""Codebase Catalog package."""
 
-__all__ = ["build_catalog", "build_report", "index_python_files", "scan_project"]
+from .report_builder import build_report
+
+__all__ = ["build_report"]

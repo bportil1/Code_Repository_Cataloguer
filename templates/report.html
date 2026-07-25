@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Codebase Catalog</title>
+  <style>
+/*__CATALOG_CSS__*/
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1 id="project-name">Codebase Catalog</h1>
+      <p id="project-root"></p>
+    </div>
+    <label class="search-label">
+      <span>Search catalog</span>
+      <input id="search" type="search" placeholder="File, class, function, import…">
+    </label>
+  </header>
+
+  <section id="summary" class="summary" aria-label="Catalog summary"></section>
+
+  <nav class="tabs" aria-label="Catalog views">
+    <button class="tab active" data-view="repository">Repository</button>
+    <button class="tab" data-view="dependencies">Dependencies</button>
+    <button class="tab" data-view="definitions">Definitions</button>
+  </nav>
+
+  <main>
+    <section id="repository-view" class="view active split-view">
+      <aside class="panel tree-panel">
+        <div class="panel-heading">
+          <h2>Repository</h2>
+          <button id="collapse-tree" class="secondary-button" type="button">Collapse</button>
+        </div>
+        <div id="tree"></div>
+      </aside>
+
+      <section class="panel details-panel">
+        <h2>Details</h2>
+        <div id="details" class="empty-state">Select a repository node.</div>
+      </section>
+    </section>
+
+    <section id="dependencies-view" class="view">
+      <section class="panel">
+        <div class="dependency-controls">
+          <label>
+            <span>Scope</span>
+            <select id="dependency-scope">
+              <option value="project">Entire project</option>
+              <option value="selected-subtree">Selected subtree</option>
+              <option value="selected-node">Selected node</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Level</span>
+            <select id="dependency-level">
+              <option value="system">System</option>
+              <option value="directory">Directory</option>
+              <option value="module">Module</option>
+              <option value="class">Class</option>
+              <option value="function">Function / method</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Direction</span>
+            <select id="dependency-direction">
+              <option value="both">Both</option>
+              <option value="outgoing">Outgoing</option>
+              <option value="incoming">Incoming</option>
+            </select>
+          </label>
+
+          <label class="search-label compact-search">
+            <span>Filter relationships</span>
+            <input id="dependency-search" type="search" placeholder="Node or dependency…">
+          </label>
+        </div>
+      </section>
+
+      <section class="dependency-workspace">
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <h2 id="dependency-title">System dependencies</h2>
+              <p id="dependency-context" class="muted"></p>
+            </div>
+            <span id="dependency-count" class="badge"></span>
+          </div>
+          <div id="dependency-overview"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Relationship details</h2>
+          <div id="dependency-details" class="empty-state">
+            Select a relationship to inspect its original local evidence.
+          </div>
+        </section>
+      </section>
+    </section>
+
+    <section id="definitions-view" class="view panel">
+      <h2>Definitions</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Kind</th>
+              <th>File</th>
+              <th>Parent</th>
+              <th>Lines</th>
+            </tr>
+          </thead>
+          <tbody id="definitions-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    window.CODEBASE_CATALOG = /*__CATALOG_DATA__*/;
+  </script>
+  <script>
+/*__CATALOG_JS__*/
+  </script>
+</body>
+</html>

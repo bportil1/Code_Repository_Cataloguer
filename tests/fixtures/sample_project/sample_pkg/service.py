@@ -1,9 +1,12 @@
 from dataclasses import dataclass
 
+from .utils import normalize_name
+
 
 @dataclass
 class Service:
     name: str
 
     def start(self) -> None:
-        print(self.name)
+        """Start the service."""
+        print(normalize_name(self.name))

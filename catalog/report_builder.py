@@ -3,23 +3,44 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .models import Catalog
+from .catalog_builder import build_catalog
 
 
-def build_report(catalog: Catalog, output_path: Path, project_dir: Path) -> Path:
-    template = (project_dir / "templates" / "catalog.html").read_text(encoding="utf-8")
-    css = (project_dir / "static" / "catalog.css").read_text(encoding="utf-8")
-    javascript = (project_dir / "static" / "catalog.js").read_text(encoding="utf-8")
-    data = json.dumps(catalog.to_dict(), ensure_ascii=False).replace("</", "<\\/")
+PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 
-    rendered = (
-        template.replace("/*__CATALOG_CSS__*/", css)
-        .replace("//__CATALOG_DATA__", f"window.CODEBASE_CATALOG = {data};")
-        .replace("//__CATALOG_JS__", javascript)
-        .replace("__PROJECT_NAME__", catalog.project_name)
+
+def build_report(
+    project_root: Path,
+    output_path: Path,
+    extra_excludes: set[str] | None = None,
+    use_gitignore: bool = True,
+) -> Path:
+    catalog = build_catalog(
+        project_root=project_root,
+        extra_excludes=extra_excludes,
+        use_gitignore=use_gitignore,
     )
 
-    output_path = output_path.expanduser().resolve()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(rendered, encoding="utf-8")
-    return output_path
+    template = (PACKAGE_ROOT / "templates" / "report.html").read_text(
+        encoding="utf-8"
+    )
+    css = (PACKAGE_ROOT / "static" / "catalog.css").read_text(
+        encoding="utf-8"
+    )
+    javascript = (PACKAGE_ROOT / "static" / "catalog.js").read_text(
+        encoding="utf-8"
+    )
+    data = json.dumps(catalog.to_dict(), ensure_ascii=False).replace(
+        "</", "<\\/"
+    )
+
+    html = (
+        template.replace("/*__CATALOG_CSS__*/", css)
+        .replace("/*__CATALOG_DATA__*/", data)
+        .replace("/*__CATALOG_JS__*/", javascript)
+    )
+
+    output = output_path.expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(html, encoding="utf-8")
+    return output

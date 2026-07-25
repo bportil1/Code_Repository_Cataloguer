@@ -1,35 +1,57 @@
-# Codebase Catalog
+# Codebase Catalog — Flask Refactor Edition
 
-A lightweight bookkeeping tool that creates a self-contained interactive HTML index of a Python repository.
+A local Python repository explorer and organizer. It retains the containment tree,
+definition search, source preview, and multi-resolution dependency views, and adds
+a Flask backend for safe object-level file changes.
 
-It catalogs directly visible repository structure:
+## Implemented refactor
 
-- directories and files
-- Python modules
-- imports as written
-- classes, functions, and methods
-- signatures, docstrings, decorators, bases, and line locations
-- simple names mentioned inside definitions
-- internal module imports and external package names
+Select a top-level function, choose another existing Python module, preview the
+unified diffs, and apply the move.
 
-It does not attempt runtime tracing, correctness checking, complexity scoring, or architectural evaluation.
+The backend:
 
-## Run
+- uses the indexed function node and AST line range
+- rejects methods, nested functions, same-file moves, and duplicate target names
+- validates both changed files with `ast.parse`
+- hashes files during preview and rejects stale plans
+- writes files atomically
+- creates backups under `.codebase_catalog/backups/`
+- supports **Undo last move**
+- warns when direct imports in other files still need updating
+
+This first version intentionally does not rewrite caller files automatically.
+
+## Install and run
 
 ```bash
-python codebase_catalog.py /path/to/project
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python3 app.py /path/to/project
 ```
 
-The root `.gitignore` is applied automatically. Choose an output and add any extra exclusions:
+Open `http://127.0.0.1:5000`.
+
+Windows PowerShell:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python app.py C:\path\to\project
+```
+
+## Included sample
 
 ```bash
-python codebase_catalog.py /path/to/project \
-  --output project_catalog.html \
-  --exclude results \
-  --exclude checkpoints \
-  --open
+python3 app.py tests/fixtures/sample_project
 ```
 
-Explicit `--exclude` values are added to the built-in exclusions and the root `.gitignore` rules. To intentionally catalog ignored files, pass `--no-gitignore`.
+Select `normalize_name()` and move it to `sample_pkg/normalization.py`.
 
-The generated HTML is self-contained and can be opened directly without a server.
+## Test
+
+```bash
+python3 tests/smoke_test.py
+```
