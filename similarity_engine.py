@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict, deque
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from math import sqrt
 import re
 from typing import Iterable, Mapping
@@ -77,6 +77,9 @@ class LayerScore:
     edge_similarity: float
     combined_similarity: float
     distance_weight: float
+    left_count: int
+    right_count: int
+    pair_count: int
 
 
 @dataclass(frozen=True)
@@ -85,7 +88,21 @@ class SimilarityResult:
     right_root: str
     score: float
     layers: tuple[LayerScore, ...]
-    matched_nodes: tuple[tuple[str, str, float, int], ...] = ()
+    pairwise_comparisons: tuple[tuple[str, str, float, int], ...] = ()
+
+    def to_dict(self, *, include_pairs: bool = True) -> dict:
+        payload = {
+            "left_root": self.left_root,
+            "right_root": self.right_root,
+            "score": self.score,
+            "layers": [asdict(layer) for layer in self.layers],
+        }
+        if include_pairs:
+            payload["pairwise_comparisons"] = [
+                {"left": left, "right": right, "score": score, "distance": distance}
+                for left, right, score, distance in self.pairwise_comparisons
+            ]
+        return payload
 
 
 class FunctionGraph:
@@ -134,9 +151,6 @@ class FunctionGraph:
             result.setdefault(distance, set())
         return result
 
-    def incident_edges(self, nodes: set[str]) -> tuple[CallEdge, ...]:
-        return tuple(edge for node in nodes for edge in self.outgoing[node])
-
 
 def cosine_similarity(left: Mapping[str, float], right: Mapping[str, float]) -> float:
     if not left or not right:
@@ -151,35 +165,26 @@ def node_similarity(left: FunctionNode, right: FunctionNode) -> float:
     return cosine_similarity(left.descriptor_counts(), right.descriptor_counts())
 
 
-def _greedy_node_matching(
+def _all_pair_node_similarity(
     graph: FunctionGraph,
     left_nodes: set[str],
     right_nodes: set[str],
 ) -> tuple[float, tuple[tuple[str, str, float], ...]]:
-    """Deterministic one-to-one matching; replaceable by Hungarian later."""
+    """Average every Cartesian-product comparison in corresponding layers."""
     if not left_nodes and not right_nodes:
         return 1.0, ()
     if not left_nodes or not right_nodes:
         return 0.0, ()
 
-    candidates = [
-        (node_similarity(graph.nodes[left], graph.nodes[right]), left, right)
+    comparisons = tuple(
+        (left, right, node_similarity(graph.nodes[left], graph.nodes[right]))
         for left in sorted(left_nodes)
         for right in sorted(right_nodes)
-    ]
-    candidates.sort(key=lambda item: (-item[0], item[1], item[2]))
-
-    used_left: set[str] = set()
-    used_right: set[str] = set()
-    matches: list[tuple[str, str, float]] = []
-    for score, left, right in candidates:
-        if left in used_left or right in used_right:
-            continue
-        used_left.add(left)
-        used_right.add(right)
-        matches.append((left, right, score))
-
-    return sum(score for _, _, score in matches) / max(len(left_nodes), len(right_nodes)), tuple(matches)
+    )
+    return (
+        sum(score for _, _, score in comparisons) / len(comparisons),
+        comparisons,
+    )
 
 
 def _edge_counts(graph: FunctionGraph, layer: set[str]) -> Counter[str]:
@@ -222,6 +227,8 @@ def compare_functions(
     left_root: str,
     right_root: str,
     config: SimilarityConfig | None = None,
+    *,
+    include_pairs: bool = True,
 ) -> SimilarityResult:
     config = config or SimilarityConfig()
     config.validate()
@@ -229,27 +236,49 @@ def compare_functions(
     left_layers = graph.layers(left_root, config.context_depth)
     right_layers = graph.layers(right_root, config.context_depth)
     layer_results: list[LayerScore] = []
-    all_matches: list[tuple[str, str, float, int]] = []
+    all_pairs: list[tuple[str, str, float, int]] = []
     weighted_total = 0.0
     total_weight = 0.0
 
     for distance in range(config.context_depth + 1):
         left_nodes = left_layers[distance]
         right_nodes = right_layers[distance]
-        node_score, matches = _greedy_node_matching(graph, left_nodes, right_nodes)
-        all_matches.extend((left, right, score, distance) for left, right, score in matches)
+        node_score, comparisons = _all_pair_node_similarity(
+            graph, left_nodes, right_nodes
+        )
+        if include_pairs:
+            all_pairs.extend(
+                (left, right, score, distance)
+                for left, right, score in comparisons
+            )
 
         edge_score = _edge_similarity(graph, left_nodes, right_nodes, config)
-        combined = (config.node_weight * node_score + edge_score) / (config.node_weight + 1.0)
+        denominator = config.node_weight + 1.0
+        combined = (
+            (config.node_weight * node_score + edge_score) / denominator
+            if denominator
+            else 0.0
+        )
         distance_weight = config.distance_decay ** distance
         weighted_total += combined * distance_weight
         total_weight += distance_weight
-        layer_results.append(LayerScore(distance, node_score, edge_score, combined, distance_weight))
+        layer_results.append(
+            LayerScore(
+                distance=distance,
+                node_similarity=node_score,
+                edge_similarity=edge_score,
+                combined_similarity=combined,
+                distance_weight=distance_weight,
+                left_count=len(left_nodes),
+                right_count=len(right_nodes),
+                pair_count=len(comparisons),
+            )
+        )
 
     return SimilarityResult(
-        left_root,
-        right_root,
-        weighted_total / total_weight if total_weight else 0.0,
-        tuple(layer_results),
-        tuple(all_matches),
+        left_root=left_root,
+        right_root=right_root,
+        score=weighted_total / total_weight if total_weight else 0.0,
+        layers=tuple(layer_results),
+        pairwise_comparisons=tuple(all_pairs),
     )
