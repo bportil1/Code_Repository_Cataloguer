@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "code-repository-cataloguer"
+version = "0.1.0"
+description = "Python repository cataloguing and structural similarity analysis"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24,<3.0"]
+
+[project.optional-dependencies]
+web = ["Flask>=3.0,<4.0"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+code-catalog-report = "code_analyzer.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["code_analyzer*", "catalog*"]
+
+[tool.setuptools]
+py-modules = [
+  "duplicate_candidates",
+  "flask_similarity_routes",
+  "repository_session",
+  "similarity_clustering",
+  "similarity_engine",
+  "similarity_matrix",
+]
+
+[tool.setuptools.package-data]
+"code_analyzer.web" = ["templates/*.html", "static/*.js", "static/*.css"]
