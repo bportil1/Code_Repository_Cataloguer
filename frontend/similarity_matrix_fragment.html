@@ -1,0 +1,17 @@
+<!-- Add inside the existing Similarity view. -->
+<div class="similarity-mode-tabs">
+  <button id="similarity-pair-mode" class="active" type="button">Pairwise Inspector</button>
+  <button id="similarity-matrix-mode" type="button">Global Matrix</button>
+</div>
+
+<section id="similarity-matrix-panel" hidden>
+  <div class="matrix-controls">
+    <button id="build-similarity-matrix" type="button">Build global matrix</button>
+    <button id="download-similarity-matrix" type="button" disabled>Download CSV</button>
+    <span id="similarity-matrix-status"></span>
+  </div>
+  <div id="similarity-matrix-summary"></div>
+  <div id="similarity-matrix-scroll">
+    <table id="similarity-matrix-table" aria-label="Global function similarity matrix"></table>
+  </div>
+</section>

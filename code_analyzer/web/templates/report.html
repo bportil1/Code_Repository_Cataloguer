@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Codebase Catalog</title>
+  <style>
+/*__CATALOG_CSS__*/
+  </style>
+</head>
+<body>
+  <div id="application-error" class="application-error" hidden role="alert"></div>
+  <header class="topbar">
+    <div>
+      <h1 id="project-name">Codebase Catalog</h1>
+      <p id="project-root"></p>
+    </div>
+    <div class="topbar-actions">
+      <form id="repository-open-form" class="repository-open-form">
+        <label>
+          <span>Repository path</span>
+          <input id="repository-path" type="text" autocomplete="off" spellcheck="false" placeholder="/path/to/python/repository">
+        </label>
+        <button id="repository-open" type="submit">Open repository</button>
+        <button id="repository-reload" class="secondary-button" type="button">Reanalyze</button>
+      </form>
+      <p id="repository-status" class="muted repository-status" aria-live="polite"></p>
+      <label class="search-label">
+        <span>Search catalog</span>
+        <input id="search" type="search" placeholder="File, class, function, import…">
+      </label>
+    </div>
+  </header>
+
+  <section id="summary" class="summary" aria-label="Catalog summary"></section>
+
+  <nav class="tabs" aria-label="Catalog views">
+    <button class="tab active" data-view="repository">Repository</button>
+    <button class="tab" data-view="dependencies">Dependencies</button>
+    <button class="tab" data-view="definitions">Definitions</button>
+    <button class="tab" data-view="similarity">Similarity</button>
+  </nav>
+
+  <main>
+    <section id="repository-view" class="view active split-view">
+      <aside class="panel tree-panel">
+        <div class="panel-heading">
+          <h2>Repository</h2>
+          <button id="collapse-tree" class="secondary-button" type="button">Collapse</button>
+        </div>
+        <div id="tree"></div>
+      </aside>
+
+      <section class="panel details-panel">
+        <h2>Details</h2>
+        <div id="details" class="empty-state">Select a repository node.</div>
+      </section>
+    </section>
+
+    <section id="dependencies-view" class="view">
+      <section class="panel">
+        <div class="dependency-view-switch" role="group" aria-label="Dependency view">
+          <button id="dependency-list-mode" class="dependency-view-button active" type="button" data-dependency-view="list">List view</button>
+          <button id="dependency-hierarchy-mode" class="dependency-view-button" type="button" data-dependency-view="hierarchy">Directory hierarchy</button>
+        </div>
+
+        <div class="dependency-controls">
+          <label>
+            <span>Scope</span>
+            <select id="dependency-scope">
+              <option value="project">Entire project</option>
+              <option value="selected-subtree">Selected subtree</option>
+              <option value="selected-node">Selected node</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Level</span>
+            <select id="dependency-level">
+              <option value="system">System</option>
+              <option value="directory">Directory</option>
+              <option value="module">Module</option>
+              <option value="class">Class</option>
+              <option value="function">Function / method</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Direction</span>
+            <select id="dependency-direction">
+              <option value="both">Both</option>
+              <option value="outgoing">Outgoing</option>
+              <option value="incoming">Incoming</option>
+            </select>
+          </label>
+
+          <label class="search-label compact-search">
+            <span>Filter relationships</span>
+            <input id="dependency-search" type="search" placeholder="Node or dependency…">
+          </label>
+
+          <label id="dependency-import-type-control" class="hierarchy-only-control" hidden>
+            <span>Import type</span>
+            <select id="dependency-import-type">
+              <option value="all">All imports</option>
+              <option value="external">External only</option>
+              <option value="internal">Internal only</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section class="dependency-workspace">
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <h2 id="dependency-title">System dependencies</h2>
+              <p id="dependency-context" class="muted"></p>
+            </div>
+            <span id="dependency-count" class="badge"></span>
+          </div>
+          <div id="dependency-overview"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Relationship details</h2>
+          <div id="dependency-details" class="empty-state">
+            Select a relationship to inspect its original local evidence.
+          </div>
+        </section>
+      </section>
+    </section>
+
+    <section id="definitions-view" class="view panel">
+      <h2>Definitions</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Kind</th>
+              <th>File</th>
+              <th>Parent</th>
+              <th>Lines</th>
+            </tr>
+          </thead>
+          <tbody id="definitions-body"></tbody>
+        </table>
+      </div>
+    </section>
+    <section id="similarity-view" class="view">
+      <div class="similarity-mode-tabs" role="tablist" aria-label="Similarity modes">
+        <button id="similarity-pair-mode" class="active" type="button">Pairwise Inspector</button>
+        <button id="similarity-matrix-mode" type="button">Global Matrix</button>
+        <button id="similarity-duplicate-mode" type="button">Duplicate Candidates</button>
+        <button id="similarity-cluster-mode" type="button">K-means Clusters</button>
+      </div>
+      <section id="similarity-pair-panel">
+      <section class="panel similarity-controls-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Function similarity</h2>
+            <p class="muted">Compare rooted call neighborhoods using fixed descriptor and edge weights.</p>
+          </div>
+          <button id="similarity-run" type="button">Compare</button>
+        </div>
+        <div class="similarity-controls">
+          <label><span>Left function</span><select id="similarity-left"></select></label>
+          <label><span>Right function</span><select id="similarity-right"></select></label>
+          <label><span>Context depth</span><input id="similarity-depth" data-similarity-setting="context_depth" type="number" min="0" max="5" step="1" value="1"></label>
+          <label><span>Distance decay</span><input id="similarity-decay" data-similarity-setting="distance_decay" type="number" min="0" max="1" step="0.05" value="0.50"></label>
+          <label><span>External import weight</span><input id="similarity-import-weight" data-similarity-setting="external_import_weight" type="number" min="0" max="1" step="0.05" value="0.20"></label>
+        </div>
+      </section>
+      <section class="similarity-workspace">
+        <section class="panel">
+          <h2>Score</h2>
+          <div id="similarity-summary" class="empty-state">Choose two functions and run the comparison.</div>
+        </section>
+        <section class="panel">
+          <h2>Depth breakdown</h2>
+          <div id="similarity-layers" class="empty-state">No comparison yet.</div>
+        </section>
+        <section class="panel similarity-matches-panel">
+          <h2>Matched nodes</h2>
+          <div id="similarity-matches" class="empty-state">No comparison yet.</div>
+        </section>
+        <section class="panel similarity-source-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Source comparison</h2>
+              <p class="muted">Inspect the exact function and method bodies used to construct each semantic descriptor.</p>
+            </div>
+          </div>
+          <div class="similarity-source-grid">
+            <article class="similarity-source-column">
+              <header class="similarity-source-heading">
+                <strong id="similarity-left-source-title">Left function</strong>
+                <span id="similarity-left-source-location" class="muted"></span>
+              </header>
+              <pre class="similarity-source-code"><code id="similarity-left-source"></code></pre>
+            </article>
+            <article class="similarity-source-column">
+              <header class="similarity-source-heading">
+                <strong id="similarity-right-source-title">Right function</strong>
+                <span id="similarity-right-source-location" class="muted"></span>
+              </header>
+              <pre class="similarity-source-code"><code id="similarity-right-source"></code></pre>
+            </article>
+          </div>
+        </section>
+      </section>
+      </section>
+      <section id="similarity-matrix-panel" hidden>
+        <section class="panel similarity-controls-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Global function similarity matrix</h2>
+              <p class="muted">Apply the rooted local comparison to every function pair in the repository.</p>
+            </div>
+            <div class="matrix-actions">
+              <button id="similarity-matrix-build" type="button">Build matrix</button>
+              <button id="similarity-matrix-download" type="button" disabled>Download CSV</button>
+            </div>
+          </div>
+          <div class="similarity-controls similarity-shared-controls">
+            <label><span>Context depth</span><input id="similarity-matrix-depth" data-similarity-setting="context_depth" type="number" min="0" max="5" step="1" value="1"></label>
+            <label><span>Distance decay</span><input id="similarity-matrix-decay" data-similarity-setting="distance_decay" type="number" min="0" max="1" step="0.05" value="0.50"></label>
+            <label><span>External import weight</span><input id="similarity-matrix-import-weight" data-similarity-setting="external_import_weight" type="number" min="0" max="1" step="0.05" value="0.20"></label>
+          </div>
+          <p id="similarity-matrix-status" class="muted">These settings are synchronized with the other similarity tabs.</p>
+        </section>
+        <section class="panel">
+          <div id="similarity-matrix-summary" class="matrix-summary"></div>
+          <div id="similarity-matrix-scroll" class="matrix-scroll">
+            <table id="similarity-matrix-table" class="similarity-matrix-table"></table>
+          </div>
+        </section>
+      </section>
+      <section id="similarity-duplicate-panel" hidden>
+        <section class="panel similarity-controls-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Candidate duplicate functions</h2>
+              <p class="muted">Rank potentially overlapping functions and explain the descriptor factors that caused each match.</p>
+            </div>
+            <button id="similarity-duplicate-build" type="button">Find candidates</button>
+          </div>
+          <div class="duplicate-controls">
+            <label><span>Minimum similarity</span><input id="similarity-duplicate-threshold" type="number" min="0" max="1" step="0.05" value="0.65"></label>
+            <label><span>Maximum results</span><input id="similarity-duplicate-limit" type="number" min="1" max="500" step="1" value="50"></label>
+          </div>
+          <div class="similarity-controls similarity-shared-controls">
+            <label><span>Context depth</span><input id="similarity-duplicate-depth" data-similarity-setting="context_depth" type="number" min="0" max="5" step="1" value="1"></label>
+            <label><span>Distance decay</span><input id="similarity-duplicate-decay" data-similarity-setting="distance_decay" type="number" min="0" max="1" step="0.05" value="0.50"></label>
+            <label><span>External import weight</span><input id="similarity-duplicate-import-weight" data-similarity-setting="external_import_weight" type="number" min="0" max="1" step="0.05" value="0.20"></label>
+          </div>
+          <p id="similarity-duplicate-status" class="muted">These settings are synchronized with the other similarity tabs.</p>
+        </section>
+        <section class="panel duplication-health-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Repository duplication health</h2>
+              <p class="muted">Size-normalized repository-wide metrics make before/after refactoring runs comparable.</p>
+            </div>
+            <div class="matrix-actions">
+              <button id="similarity-duplicate-save-baseline" class="secondary-button" type="button" disabled>Save baseline</button>
+              <button id="similarity-duplicate-clear-baseline" class="secondary-button" type="button" disabled>Clear baseline</button>
+            </div>
+          </div>
+          <div id="similarity-duplicate-health" class="duplication-health-grid empty-state">Run the duplicate analysis to calculate repository-wide metrics.</div>
+          <p id="similarity-duplicate-baseline-status" class="muted">No baseline saved for this repository.</p>
+        </section>
+        <section class="panel">
+          <div id="similarity-duplicate-summary" class="matrix-summary"></div>
+          <div id="similarity-duplicate-results" class="empty-state">No duplicate candidates have been generated.</div>
+        </section>
+      </section>
+      <section id="similarity-cluster-panel" hidden>
+        <section class="panel similarity-controls-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>K-means function clusters</h2>
+              <p class="muted">Cluster functions from their repository-wide similarity profiles and project them to two dimensions for visualization.</p>
+            </div>
+            <button id="similarity-cluster-build" type="button">Build clusters</button>
+          </div>
+          <div class="cluster-controls">
+            <label><span>Number of clusters (k)</span><input id="similarity-cluster-k" type="number" min="1" step="1" value="3"></label>
+          </div>
+          <div class="similarity-controls similarity-shared-controls">
+            <label><span>Context depth</span><input id="similarity-cluster-depth" data-similarity-setting="context_depth" type="number" min="0" max="5" step="1" value="1"></label>
+            <label><span>Distance decay</span><input id="similarity-cluster-decay" data-similarity-setting="distance_decay" type="number" min="0" max="1" step="0.05" value="0.50"></label>
+            <label><span>External import weight</span><input id="similarity-cluster-import-weight" data-similarity-setting="external_import_weight" type="number" min="0" max="1" step="0.05" value="0.20"></label>
+          </div>
+          <p id="similarity-cluster-status" class="muted">These settings are synchronized with the other similarity tabs.</p>
+        </section>
+        <section class="cluster-layout">
+          <section class="panel">
+            <div id="similarity-cluster-summary" class="matrix-summary"></div>
+            <div id="similarity-cluster-legend" class="cluster-legend"></div>
+            <svg id="similarity-cluster-plot" class="cluster-plot" viewBox="0 0 960 560" role="img" aria-label="K-means clustering of repository functions"></svg>
+          </section>
+          <section class="panel">
+            <h2>Cluster membership</h2>
+            <div id="similarity-cluster-members" class="empty-state">No clustering yet.</div>
+          </section>
+        </section>
+        <section id="similarity-cluster-factors-panel" class="panel cluster-factors-panel" hidden>
+          <div class="panel-heading">
+            <div>
+              <h2 id="similarity-cluster-factors-title">Common cluster factors</h2>
+              <p class="muted">Ranked by cluster prevalence minus repository prevalence.</p>
+            </div>
+            <button id="similarity-cluster-factors-close" class="secondary-button" type="button" aria-label="Close common factors">Close</button>
+          </div>
+          <div id="similarity-cluster-factors" class="empty-state">Select a cluster to inspect its factors.</div>
+        </section>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    window.addEventListener("error", event => {
+      const box = document.getElementById("application-error");
+      if (!box) return;
+      box.hidden = false;
+      box.textContent = `A view failed to initialize: ${event.message || "unknown browser error"}. The repository controls remain available.`;
+    });
+    window.CODEBASE_CATALOG = /*__CATALOG_DATA__*/;
+  </script>
+  <script>
+/*__CATALOG_JS__*/
+  </script>
+</body>
+</html>

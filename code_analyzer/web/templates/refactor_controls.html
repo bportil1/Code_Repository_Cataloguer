@@ -1,0 +1,13 @@
+<div id="refactor-toolbar" class="refactor-toolbar">
+  <button id="undo-refactor" type="button">Undo last move</button>
+</div>
+<div id="refactor-toast" class="refactor-toast hidden"></div>
+<dialog id="move-function-dialog">
+  <form method="dialog" class="move-dialog-card">
+    <div class="panel-heading"><div><h2>Move function</h2><p id="move-function-name" class="muted"></p></div><button value="cancel">Close</button></div>
+    <label class="move-field"><span>Target Python module</span><select id="move-target-module"></select></label>
+    <div class="move-actions"><button id="preview-function-move" type="button">Preview move</button></div>
+    <div id="move-preview" class="empty-state">Choose a target module and preview the change.</div>
+    <div id="apply-move-wrap" class="move-actions hidden"><button id="apply-function-move" type="button">Apply changes</button></div>
+  </form>
+</dialog>
