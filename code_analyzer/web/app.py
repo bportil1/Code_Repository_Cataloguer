@@ -38,6 +38,7 @@ def create_app(project_root: Path, extra_excludes=None, use_gitignore=True):
             + "\n</script>"
             for filename in (
                 "catalog.js",
+                "repository_map.js",
                 "refactor.js",
                 "similarity.js",
                 "repository_session.js",
@@ -119,6 +120,21 @@ def create_app(project_root: Path, extra_excludes=None, use_gitignore=True):
                 ordering=str(payload.get("ordering", "qualified_name")),
             )
             return jsonify(result.to_dict())
+        except (KeyError, TypeError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.post("/api/similarity/neighbors")
+    def similarity_neighbors():
+        payload = request.get_json(silent=True) or {}
+        try:
+            return jsonify(analyzer.similarity_neighbors(
+                str(payload.get("function_id", "")),
+                limit=int(payload.get("limit", 8)),
+                threshold=float(payload.get("threshold", 0.0)),
+                context_depth=int(payload.get("context_depth", 1)),
+                distance_decay=float(payload.get("distance_decay", 0.5)),
+                external_import_weight=float(payload.get("external_import_weight", 0.20)),
+            ))
         except (KeyError, TypeError, ValueError) as exc:
             return jsonify({"error": str(exc)}), 400
 

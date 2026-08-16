@@ -35,26 +35,102 @@
   <section id="summary" class="summary" aria-label="Catalog summary"></section>
 
   <nav class="tabs" aria-label="Catalog views">
-    <button class="tab active" data-view="repository">Repository</button>
+    <button class="tab active" data-view="repository">Repository Map</button>
     <button class="tab" data-view="dependencies">Dependencies</button>
     <button class="tab" data-view="definitions">Definitions</button>
     <button class="tab" data-view="similarity">Similarity</button>
   </nav>
 
   <main>
-    <section id="repository-view" class="view active split-view">
-      <aside class="panel tree-panel">
+    <section id="repository-view" class="view active repository-map-layout">
+      <aside class="panel tree-panel repository-tree-panel">
         <div class="panel-heading">
-          <h2>Repository</h2>
+          <div>
+            <h2>Repository</h2>
+            <p class="muted compact-copy">Where does this symbol live?</p>
+          </div>
           <button id="collapse-tree" class="secondary-button" type="button">Collapse</button>
         </div>
         <div id="tree"></div>
       </aside>
 
-      <section class="panel details-panel">
-        <h2>Details</h2>
-        <div id="details" class="empty-state">Select a repository node.</div>
+      <section class="panel repository-map-panel">
+        <div class="panel-heading repository-map-heading">
+          <div>
+            <h2>Repository Map</h2>
+            <p id="repository-map-context" class="muted compact-copy">Select a repository node to explore its local structure.</p>
+          </div>
+          <div class="repository-map-view-switch" role="group" aria-label="Repository map view">
+            <button id="repository-symbol-map-mode" class="repository-map-view-button active" type="button" data-map-view="symbol">Symbol Map</button>
+            <button id="repository-call-path-mode" class="repository-map-view-button" type="button" data-map-view="call-path">Call Path</button>
+          </div>
+        </div>
+
+        <div class="repository-map-controls">
+          <div id="repository-map-lenses" class="repository-map-lenses" role="group" aria-label="Repository map lens">
+            <button type="button" class="repository-map-lens active" data-map-lens="structure">Structure</button>
+            <button type="button" class="repository-map-lens" data-map-lens="calls">Calls</button>
+            <button type="button" class="repository-map-lens" data-map-lens="imports">Imports</button>
+            <button type="button" class="repository-map-lens" data-map-lens="similarity">Similarity</button>
+            <button type="button" class="repository-map-lens" data-map-lens="duplication">Duplication</button>
+          </div>
+
+          <label>
+            <span>Map depth</span>
+            <select id="repository-map-depth">
+              <option value="1" selected>1 hop</option>
+              <option value="2">2 hops</option>
+              <option value="3">3 hops</option>
+            </select>
+          </label>
+
+          <label class="repository-map-check"><input id="repository-map-incoming" type="checkbox" checked> Incoming</label>
+          <label class="repository-map-check"><input id="repository-map-outgoing" type="checkbox" checked> Outgoing</label>
+        </div>
+
+        <div id="repository-map-similarity-controls" class="repository-map-similarity-controls" hidden>
+          <label><span>Similarity depth</span><input id="repository-map-similarity-depth" data-similarity-setting="context_depth" type="number" min="0" max="5" step="1" value="1"></label>
+          <label><span>Distance decay</span><input id="repository-map-decay" data-similarity-setting="distance_decay" type="number" min="0" max="1" step="0.05" value="0.50"></label>
+          <label><span>External import weight</span><input id="repository-map-import-weight" data-similarity-setting="external_import_weight" type="number" min="0" max="1" step="0.05" value="0.20"></label>
+          <label id="repository-map-duplicate-threshold-wrap" hidden><span>Duplicate threshold</span><input id="repository-map-duplicate-threshold" type="number" min="0" max="1" step="0.05" value="0.65"></label>
+        </div>
+
+        <div class="repository-map-navigation" aria-label="Repository map navigation">
+          <div class="repository-map-navigation-group">
+            <button id="repository-map-zoom-out" class="secondary-button" type="button" title="Zoom out">−</button>
+            <span id="repository-map-zoom-label" class="repository-map-zoom-label">100%</span>
+            <button id="repository-map-zoom-in" class="secondary-button" type="button" title="Zoom in">+</button>
+          </div>
+          <div class="repository-map-navigation-group">
+            <button id="repository-map-center" class="secondary-button" type="button">Center selection</button>
+            <button id="repository-map-fit" class="secondary-button" type="button">Fit map</button>
+            <button id="repository-map-reset-layout" class="secondary-button" type="button">Reset layout</button>
+          </div>
+          <span class="muted repository-map-navigation-hint">Drag nodes to rearrange · drag empty canvas to pan · scroll to explore the full map</span>
+        </div>
+
+        <div id="repository-map-canvas-wrap" class="repository-map-canvas-wrap">
+          <svg id="repository-map-svg" class="repository-map-svg" role="img" aria-label="Interactive repository symbol map"></svg>
+          <div id="repository-map-empty" class="repository-map-empty" hidden></div>
+        </div>
+        <div id="repository-map-status" class="repository-map-status muted" aria-live="polite"></div>
+        <div class="repository-map-legend">
+          <span><i class="map-legend-line calls"></i> call</span>
+          <span><i class="map-legend-line imports"></i> import use</span>
+          <span><i class="map-legend-line similarity"></i> similarity</span>
+          <span><i class="map-legend-line duplication"></i> duplicate candidate</span>
+        </div>
       </section>
+
+      <aside class="panel details-panel repository-inspector-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Symbol Inspector</h2>
+            <p class="muted compact-copy">What am I looking at?</p>
+          </div>
+        </div>
+        <div id="details" class="empty-state">Select a repository node.</div>
+      </aside>
     </section>
 
     <section id="dependencies-view" class="view">

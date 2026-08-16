@@ -425,8 +425,111 @@ def build_catalog(
             *(method for cls in module.classes for method in cls.methods),
         ]
 
+        # Record import usage at function/method granularity.  Module-level
+        # import edges answer "what does this file import?" while these
+        # edges answer the more useful navigation question "which symbol in
+        # this file actually references that imported dependency?".
+        import_sources: dict[str, dict[str, object]] = {}
+        for imported in module.imports:
+            display_name = _relative_import_source(
+                module, imported.module, imported.level
+            )
+            resolved = _resolve_internal_module(
+                module, imported.module, imported.level, known_modules
+            )
+            if resolved:
+                target_id = module_id_by_name[resolved]
+                target_kind = "module"
+            else:
+                package = (display_name or imported.module).split(".")[0]
+                if not package:
+                    continue
+                target_id = _node_id("external", package)
+                target_kind = "external"
+                if target_id not in nodes:
+                    nodes[target_id] = CatalogNode(
+                        id=target_id,
+                        node_type="external",
+                        name=package,
+                        qualified_name=package,
+                    )
+
+            if imported.names:
+                for imported_name in imported.names:
+                    import_sources[imported_name] = {
+                        "target_id": target_id,
+                        "target_kind": target_kind,
+                        "resolved": (
+                            f"{display_name}.{imported_name}"
+                            if display_name
+                            else imported_name
+                        ),
+                        "line": imported.line,
+                        "statement": _normalized_import_statement(
+                            imported, display_name
+                        ),
+                    }
+            else:
+                binding = imported.alias or (
+                    imported.module.split(".")[0] if imported.module else ""
+                )
+                if binding:
+                    import_sources[binding] = {
+                        "target_id": target_id,
+                        "target_kind": target_kind,
+                        "resolved": display_name or imported.module,
+                        "line": imported.line,
+                        "statement": _normalized_import_statement(
+                            imported, display_name
+                        ),
+                    }
+
         for definition in definitions:
             source_id = _function_id(definition.kind, definition.qualified_name)
+
+            usage_groups: dict[tuple[str, str], dict[str, object]] = {}
+            for expression in definition.mentions:
+                root_name = expression.split(".")[0]
+                import_source = import_sources.get(root_name)
+                if import_source is None:
+                    continue
+                target_id = str(import_source["target_id"])
+                key = (target_id, root_name)
+                group = usage_groups.setdefault(
+                    key,
+                    {
+                        "target_id": target_id,
+                        "target_kind": str(import_source["target_kind"]),
+                        "binding": root_name,
+                        "resolved": str(import_source["resolved"]),
+                        "import_line": int(import_source["line"]),
+                        "statement": str(import_source["statement"]),
+                        "expressions": set(),
+                    },
+                )
+                group["expressions"].add(expression)
+
+            for usage in usage_groups.values():
+                relationships.append(
+                    DependencyEdge(
+                        source_id=source_id,
+                        target_id=str(usage["target_id"]),
+                        relationship_type="uses_import",
+                        source_level=definition.kind,
+                        target_level=str(usage["target_kind"]),
+                        evidence={
+                            "file": module.path,
+                            "function_line_start": definition.line_start,
+                            "function_line_end": definition.line_end,
+                            "binding": usage["binding"],
+                            "resolved": usage["resolved"],
+                            "import_line": usage["import_line"],
+                            "statement": usage["statement"],
+                            "expressions": sorted(usage["expressions"]),
+                        },
+                    )
+                )
+
             for expression in definition.calls:
                 target_id = _resolve_call_target(
                     expression,

@@ -275,6 +275,7 @@
   function showNodeDetails(nodeId) {
     const item = node(nodeId);
     if (!item) return;
+    window.dispatchEvent(new CustomEvent("catalog-node-selected", { detail: { nodeId } }));
 
     const metadata = item.metadata || {};
     const source = metadata.source_code
@@ -324,11 +325,33 @@
       ["Parse error", metadata.parse_error],
     ].filter(([, value]) => value !== null && value !== undefined && value !== "");
 
+    const relationSummary = relationshipDirectionFor(item.id);
+    const outgoingCalls = relationSummary.outgoing.filter(edge => edge.relationship_type === "calls").length;
+    const incomingCalls = relationSummary.incoming.filter(edge => edge.relationship_type === "calls").length;
+    const importUses = relationSummary.outgoing.filter(edge => edge.relationship_type === "uses_import").length;
+    const containedDefinitions = (item.children || []).filter(childId => {
+      const child = node(childId);
+      return child && ["class", "function", "method"].includes(child.node_type);
+    }).length;
+    const glance = ["function", "method"].includes(item.node_type)
+      ? `
+        <div class="symbol-glance-grid">
+          <div class="symbol-glance-card"><strong>${outgoingCalls}</strong><span>Calls</span></div>
+          <div class="symbol-glance-card"><strong>${incomingCalls}</strong><span>Called by</span></div>
+          <div class="symbol-glance-card"><strong>${importUses}</strong><span>Imported dependencies used</span></div>
+          <div class="symbol-glance-card"><strong>${metadata.calls?.length || 0}</strong><span>Call expressions recorded</span></div>
+        </div>`
+      : containedDefinitions
+        ? `<div class="symbol-glance-grid"><div class="symbol-glance-card"><strong>${containedDefinitions}</strong><span>Direct definitions</span></div><div class="symbol-glance-card"><strong>${relationSummary.outgoing.length}</strong><span>Outgoing relationships</span></div></div>`
+        : "";
+
     document.getElementById("details").innerHTML = `
       <h3>
         ${escapeHtml(nodeLabel(item))}
         <span class="badge">${escapeHtml(item.node_type)}</span>
       </h3>
+
+      ${glance}
 
       <dl class="metadata">
         ${rows
@@ -1109,6 +1132,24 @@
       }
     });
   });
+
+  window.CodebaseCatalogUI = {
+    openNode(targetId) {
+      if (!nodes.has(targetId)) return false;
+      state.selectedNodeId = targetId;
+      showNodeDetails(targetId);
+      setView("repository");
+      const button = document.querySelector(
+        `.tree-entry[data-node-id="${CSS.escape(targetId)}"]`
+      );
+      selectTreeButton(button);
+      return true;
+    },
+    setView,
+    selectedNodeId() {
+      return state.selectedNodeId;
+    },
+  };
 
   renderDefinitions();
   showNodeDetails(catalog.root_node_id);

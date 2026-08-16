@@ -183,3 +183,19 @@ The test suite covers the original similarity/duplication behavior plus the new 
 ## Module boundary
 
 See `MODULE.md` and `docs/ARCHITECTURE.md` before adding cross-cutting functionality.
+
+## Repository Map MVP
+
+The standalone web interface now includes a three-pane Repository Map intended for repository comprehension rather than only reporting analysis results:
+
+- Repository tree: locate directories, modules, classes, functions, and methods.
+- Repository Map: switch between Structure, Calls, Imports, Similarity, and Duplication lenses.
+- Symbol Inspector: inspect source, metadata, calls/callers, and imported dependencies used by the selected symbol.
+- Call Path view: follow statically resolved incoming and outgoing call neighborhoods by hop depth.
+- Scrollable map workspace: layouts expand beyond the visible viewport instead of compressing nodes into a fixed SVG.
+- Interactive navigation: drag nodes to rearrange them, drag empty canvas space to pan, use scrollbars to move through larger graphs, and zoom/fit/center the map with dedicated controls.
+- Hover emphasis: hovering a node fades unrelated nodes/edges so its immediate relationships are easier to read.
+
+The catalog also records `uses_import` relationships from functions/methods to imported modules or external packages when the imported binding is referenced inside that definition. This is separate from module-level `imports` relationships and is intended to answer which code symbols actually use a dependency.
+
+Similarity and duplication map lenses use the same context-depth, distance-decay, and external-import-weight controls as the existing similarity analyses.

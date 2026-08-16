@@ -8,7 +8,7 @@ from .catalog.similarity_adapter import compare_catalog_functions, graph_from_ca
 from .session import RepositorySessionManager
 from .similarity.clustering import cluster_common_factors, cluster_similarity_matrix
 from .similarity.duplicates import find_duplicate_candidates
-from .similarity.engine import FunctionGraph, SimilarityConfig
+from .similarity.engine import FunctionGraph, SimilarityConfig, compare_functions
 from .similarity.matrix import SimilarityMatrixResult, compute_similarity_matrix
 
 
@@ -123,6 +123,63 @@ class CodeAnalyzer:
             external_import_weight=external_import_weight,
         )
         return compute_similarity_matrix(self.graph(), config, ordering=ordering)
+
+    def similarity_neighbors(
+        self,
+        function_id: str,
+        *,
+        limit: int = 8,
+        threshold: float = 0.0,
+        context_depth: int = 1,
+        distance_decay: float = 0.5,
+        external_import_weight: float = 0.20,
+    ) -> dict:
+        graph = self.graph()
+        if function_id not in graph.nodes:
+            raise ValueError(f"Unknown function node: {function_id}")
+        if limit < 1:
+            raise ValueError("limit must be positive")
+        if not 0.0 <= threshold <= 1.0:
+            raise ValueError("threshold must be between 0 and 1")
+
+        config = self.similarity_config(
+            context_depth=context_depth,
+            distance_decay=distance_decay,
+            external_import_weight=external_import_weight,
+        )
+        scored = []
+        for other_id in graph.nodes:
+            if other_id == function_id:
+                continue
+            result = compare_functions(
+                graph, function_id, other_id, config, include_pairs=False
+            )
+            if result.score < threshold:
+                continue
+            scored.append((other_id, result.score))
+        scored.sort(key=lambda item: (-item[1], item[0]))
+
+        catalog = self.catalog(refresh=False)
+        neighbors = []
+        for other_id, score in scored[: int(limit)]:
+            item = catalog.nodes.get(other_id)
+            neighbors.append({
+                "id": other_id,
+                "score": score,
+                "name": item.name if item else other_id,
+                "qualified_name": (item.qualified_name if item else other_id),
+                "path": (item.path if item else None),
+                "node_type": (item.node_type if item else "function"),
+            })
+        return {
+            "function_id": function_id,
+            "neighbors": neighbors,
+            "config": {
+                "context_depth": config.context_depth,
+                "distance_decay": config.distance_decay,
+                "external_import_weight": config.external_import_weight,
+            },
+        }
 
     def duplicate_candidates(
         self,
