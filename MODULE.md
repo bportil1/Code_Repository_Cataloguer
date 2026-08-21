@@ -10,6 +10,8 @@ from code_analyzer import CodeAnalyzer
 
 `code_analyzer/api.py` is the primary integration boundary.
 
+Programmatic consumers can also request a reusable call-network artifact with `CodeAnalyzer.call_network(...)`. Passing `depth=None` traverses the selected function or method until no additional statically resolved call nodes are reachable; finite depths preserve bounded-hop analysis.
+
 ## Responsibilities
 
 This module owns:

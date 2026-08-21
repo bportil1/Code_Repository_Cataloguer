@@ -95,6 +95,21 @@ def create_app(project_root: Path, extra_excludes=None, use_gitignore=True):
                 "error": f"{type(exc).__name__}: {exc}",
             }), 500
 
+    @app.post("/api/repository/network")
+    def repository_network():
+        payload = request.get_json(silent=True) or {}
+        try:
+            raw_depth = payload.get("depth", "all")
+            depth = None if raw_depth in (None, "all") else int(raw_depth)
+            return jsonify(analyzer.call_network(
+                str(payload.get("focus_id", "")),
+                depth=depth,
+                include_incoming=bool(payload.get("include_incoming", True)),
+                include_outgoing=bool(payload.get("include_outgoing", True)),
+            ))
+        except (KeyError, TypeError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+
     @app.post("/api/similarity/compare")
     def compare_similarity():
         payload = request.get_json(silent=True) or {}

@@ -128,10 +128,15 @@
     });
   }
 
-  function graph(nodesList, edges, focusId, layers = null, message = "") {
+  function graph(nodesList, edges, focusId, layers = null, message = "", metadata = {}) {
     const ids = [...new Set(nodesList.map(value => typeof value === "string" ? value : value.id))]
       .filter(nodeId => nodes.has(nodeId));
-    return { ids, edges: uniqueEdges(edges), focusId, layers, message };
+    return { ids, edges: uniqueEdges(edges), focusId, layers, message, metadata };
+  }
+
+  function mapDepth() {
+    const raw = document.getElementById("repository-map-depth")?.value || "1";
+    return raw === "all" ? Infinity : Math.max(0, Number(raw) || 1);
   }
 
   function structureGraph(focusId) {
@@ -179,25 +184,34 @@
 
   function callScopeGraph(focusId) {
     if (!isFunction(focusId)) {
-      const functions = functionsInScope(focusId, 28);
+      const fullScope = mapDepth() === Infinity;
+      const functions = functionsInScope(focusId, fullScope ? Infinity : 28);
       const ids = new Set(functions.map(value => value.id));
       const edges = relationships.filter(edge =>
         edge.relationship_type === "calls" && ids.has(edge.source_id) && ids.has(edge.target_id)
       );
       return graph([...ids], edges, focusId, null,
-        functions.length ? "Calls among functions in the selected scope. Select a function for a focused neighborhood." : "No functions are available in this scope."
+        functions.length
+          ? (fullScope
+            ? "Complete call network for all functions and methods in the selected scope."
+            : "Calls among functions in the selected scope. Select a function for a focused neighborhood.")
+          : "No functions are available in this scope.",
+        fullScope
+          ? { graphType: "scope_call_network", traversal: { requestedDepth: "all", maximumDepth: null, fullScope: true } }
+          : {}
       );
     }
     return callNeighborhoodGraph(focusId, false);
   }
 
   function callNeighborhoodGraph(focusId, layered) {
-    const depth = Number(document.getElementById("repository-map-depth")?.value || 1);
+    const depth = mapDepth();
     const includeIncoming = document.getElementById("repository-map-incoming")?.checked !== false;
     const includeOutgoing = document.getElementById("repository-map-outgoing")?.checked !== false;
     const visited = new Set([focusId]);
     const queue = [{ id: focusId, distance: 0, layer: 0 }];
     const layers = new Map([[focusId, 0]]);
+    const distances = new Map([[focusId, 0]]);
 
     while (queue.length) {
       const current = queue.shift();
@@ -224,6 +238,7 @@
         if (visited.has(candidate.id)) continue;
         visited.add(candidate.id);
         const nextDistance = current.distance + 1;
+        distances.set(candidate.id, nextDistance);
         layers.set(candidate.id, layered ? candidate.signed : nextDistance);
         queue.push({ id: candidate.id, distance: nextDistance, layer: candidate.signed });
       }
@@ -232,14 +247,27 @@
     const edges = relationships.filter(edge =>
       edge.relationship_type === "calls" && visited.has(edge.source_id) && visited.has(edge.target_id)
     );
+    const maximumDepth = Math.max(0, ...distances.values());
+    const fullReachable = depth === Infinity;
     return graph([...visited], edges, focusId, layered ? layers : null,
-      layered ? "Static call neighborhood. Arrows show statically resolved call direction." : "Incoming and outgoing statically resolved function calls."
+      layered ? "Static call neighborhood. Arrows show statically resolved call direction." : "Incoming and outgoing statically resolved function calls.",
+      {
+        graphType: "reachable_call_network",
+        traversal: {
+          requestedDepth: fullReachable ? "all" : depth,
+          maximumDepth,
+          fullReachable,
+          includeIncoming,
+          includeOutgoing,
+        },
+        distances: Object.fromEntries(distances),
+      }
     );
   }
 
   function importGraph(focusId) {
     if (isFunction(focusId)) {
-      const depth = Number(document.getElementById("repository-map-depth")?.value || 1);
+      const depth = mapDepth();
       const seen = new Set([focusId]);
       const edges = [];
       const first = (outgoing.get(focusId) || []).filter(edge => edge.relationship_type === "uses_import");
@@ -584,6 +612,168 @@
     }
   }
 
+  function safeFilename(value) {
+    return String(value || "repository")
+      .replace(/[^A-Za-z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "repository";
+  }
+
+  function exportNode(nodeId, graphData) {
+    const value = item(nodeId) || {};
+    const metadata = value.metadata || {};
+    return {
+      id: nodeId,
+      node_type: value.node_type || "unknown",
+      name: value.name || nodeId,
+      qualified_name: value.qualified_name || null,
+      path: value.path || metadata.path || null,
+      parent_id: value.parent_id || null,
+      line_start: metadata.line_start ?? null,
+      line_end: metadata.line_end ?? null,
+      distance_from_focus: graphData.metadata?.distances?.[nodeId] ?? null,
+    };
+  }
+
+  function canonicalNetworkPayload(graphData) {
+    const traversal = graphData.metadata?.traversal || null;
+    const publicTraversal = traversal ? {
+      requested_depth: traversal.requestedDepth ?? null,
+      maximum_depth_reached: traversal.maximumDepth ?? null,
+      include_incoming: traversal.includeIncoming ?? null,
+      include_outgoing: traversal.includeOutgoing ?? null,
+      complete: Boolean(traversal.fullReachable || traversal.fullScope),
+      full_scope: Boolean(traversal.fullScope),
+    } : null;
+    return {
+      schema_version: 1,
+      graph_type: graphData.metadata?.graphType || `${mapState.lens || "repository"}_map`,
+      project: { name: catalog.project_name || "repository" },
+      focus_id: graphData.focusId || null,
+      view: {
+        mode: mapState.viewMode,
+        lens: mapState.viewMode === "call-path" ? "calls" : mapState.lens,
+      },
+      traversal: publicTraversal,
+      summary: {
+        node_count: graphData.ids.length,
+        edge_count: graphData.edges.length,
+        maximum_depth_reached: publicTraversal?.maximum_depth_reached ?? null,
+        full_reachable: Boolean(traversal?.fullReachable),
+        full_scope: Boolean(traversal?.fullScope),
+      },
+      nodes: graphData.ids.map(nodeId => exportNode(nodeId, graphData)),
+      edges: graphData.edges.map(edge => ({
+        source_id: edge.source_id,
+        target_id: edge.target_id,
+        relationship_type: edge.relationship_type,
+        score: Number.isFinite(edge.score) ? edge.score : null,
+        evidence: edge.evidence || null,
+        metadata: edge.metadata || null,
+      })),
+    };
+  }
+
+  function downloadText(filename, content, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  function xmlEscape(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&apos;");
+  }
+
+  function graphMl(payload) {
+    const lines = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<graphml xmlns="http://graphml.graphdrawing.org/xmlns">',
+      '  <key id="node_type" for="node" attr.name="node_type" attr.type="string"/>',
+      '  <key id="name" for="node" attr.name="name" attr.type="string"/>',
+      '  <key id="qualified_name" for="node" attr.name="qualified_name" attr.type="string"/>',
+      '  <key id="path" for="node" attr.name="path" attr.type="string"/>',
+      '  <key id="distance" for="node" attr.name="distance_from_focus" attr.type="int"/>',
+      '  <key id="relationship_type" for="edge" attr.name="relationship_type" attr.type="string"/>',
+      '  <graph id="repository" edgedefault="directed">',
+    ];
+    payload.nodes.forEach(node => {
+      lines.push(`    <node id="${xmlEscape(node.id)}">`);
+      lines.push(`      <data key="node_type">${xmlEscape(node.node_type)}</data>`);
+      lines.push(`      <data key="name">${xmlEscape(node.name)}</data>`);
+      if (node.qualified_name) lines.push(`      <data key="qualified_name">${xmlEscape(node.qualified_name)}</data>`);
+      if (node.path) lines.push(`      <data key="path">${xmlEscape(node.path)}</data>`);
+      if (Number.isInteger(node.distance_from_focus)) lines.push(`      <data key="distance">${node.distance_from_focus}</data>`);
+      lines.push("    </node>");
+    });
+    payload.edges.forEach((edge, index) => {
+      lines.push(`    <edge id="e${index}" source="${xmlEscape(edge.source_id)}" target="${xmlEscape(edge.target_id)}">`);
+      lines.push(`      <data key="relationship_type">${xmlEscape(edge.relationship_type)}</data>`);
+      lines.push("    </edge>");
+    });
+    lines.push("  </graph>", "</graphml>");
+    return lines.join("\n");
+  }
+
+  function dotEscape(value) {
+    return String(value ?? "").replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("\n", "\\n");
+  }
+
+  function dotGraph(payload) {
+    const lines = ["digraph repository_network {", "  rankdir=LR;"];
+    payload.nodes.forEach(node => {
+      const labelValue = node.qualified_name || node.name || node.id;
+      lines.push(`  "${dotEscape(node.id)}" [label="${dotEscape(labelValue)}", type="${dotEscape(node.node_type)}"];`);
+    });
+    payload.edges.forEach(edge => {
+      lines.push(`  "${dotEscape(edge.source_id)}" -> "${dotEscape(edge.target_id)}" [label="${dotEscape(edge.relationship_type)}"];`);
+    });
+    lines.push("}");
+    return lines.join("\n");
+  }
+
+  function exportCurrentGraph(format) {
+    const graphData = mapState.currentGraph;
+    if (!graphData?.ids?.length) return;
+    const base = `${safeFilename(catalog.project_name)}-${safeFilename(mapState.viewMode === "call-path" ? "call-path" : mapState.lens)}`;
+    if (format === "svg") {
+      const clone = svg.cloneNode(true);
+      clone.setAttribute("xmlns", SVG_NS);
+      clone.setAttribute("width", mapState.layout?.width || svg.getAttribute("width") || 1200);
+      clone.setAttribute("height", mapState.layout?.height || svg.getAttribute("height") || 820);
+      const style = document.createElementNS(SVG_NS, "style");
+      const cssText = [];
+      for (const sheet of document.styleSheets) {
+        try {
+          for (const rule of sheet.cssRules || []) cssText.push(rule.cssText);
+        } catch (_) { /* local PAH stylesheets are readable; ignore inaccessible sheets */ }
+      }
+      style.textContent = cssText.join("\n");
+      clone.insertBefore(style, clone.firstChild);
+      const content = `<?xml version="1.0" encoding="UTF-8"?>\n${new XMLSerializer().serializeToString(clone)}`;
+      downloadText(`${base}.svg`, content, "image/svg+xml;charset=utf-8");
+      return;
+    }
+
+    const payload = canonicalNetworkPayload(graphData);
+    if (format === "graphml") {
+      downloadText(`${base}.graphml`, graphMl(payload), "application/graphml+xml;charset=utf-8");
+    } else if (format === "dot") {
+      downloadText(`${base}.dot`, dotGraph(payload), "text/vnd.graphviz;charset=utf-8");
+    } else {
+      downloadText(`${base}.json`, `${JSON.stringify(payload, null, 2)}\n`, "application/json;charset=utf-8");
+    }
+  }
+
   function renderSvg(graphData) {
     svg.replaceChildren();
     mapState.currentGraph = graphData;
@@ -621,9 +811,15 @@
     graphData.ids.forEach(nodeId => mapState.nodeSizes.set(nodeId, nodeSize(nodeId)));
     applyCanvasSize();
 
+    const traversal = graphData.metadata?.traversal;
+    const depthStatus = Number.isInteger(traversal?.maximumDepth) ? ` · max hop ${traversal.maximumDepth}` : "";
+    const completenessStatus = traversal?.fullReachable
+      ? " · full reachable closure"
+      : (traversal?.fullScope ? " · full selected scope" : "");
+    const traversalStatus = `${depthStatus}${completenessStatus}`;
     status.textContent = graphData.message
-      ? `${graphData.message} · ${graphData.ids.length} nodes · ${graphData.edges.length} relationships`
-      : `${graphData.ids.length} nodes · ${graphData.edges.length} relationships`;
+      ? `${graphData.message} · ${graphData.ids.length} nodes · ${graphData.edges.length} relationships${traversalStatus}`
+      : `${graphData.ids.length} nodes · ${graphData.edges.length} relationships${traversalStatus}`;
 
     const defs = el("defs");
     ["calls", "imports", "similarity", "duplication"].forEach(type => {
@@ -845,6 +1041,10 @@
   document.getElementById("repository-map-reset-layout")?.addEventListener("click", () => {
     mapState.zoom = 1;
     renderMap();
+  });
+  document.getElementById("repository-map-export")?.addEventListener("click", () => {
+    const format = document.getElementById("repository-map-export-format")?.value || "json";
+    exportCurrentGraph(format);
   });
 
   viewport.addEventListener("pointerdown", event => {

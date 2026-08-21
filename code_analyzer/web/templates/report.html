@@ -81,6 +81,9 @@
               <option value="1" selected>1 hop</option>
               <option value="2">2 hops</option>
               <option value="3">3 hops</option>
+              <option value="5">5 hops</option>
+              <option value="10">10 hops</option>
+              <option value="all">All reachable</option>
             </select>
           </label>
 
@@ -105,6 +108,16 @@
             <button id="repository-map-center" class="secondary-button" type="button">Center selection</button>
             <button id="repository-map-fit" class="secondary-button" type="button">Fit map</button>
             <button id="repository-map-reset-layout" class="secondary-button" type="button">Reset layout</button>
+          </div>
+          <div class="repository-map-navigation-group repository-map-export-group">
+            <label for="repository-map-export-format" class="visually-compact-label">Export</label>
+            <select id="repository-map-export-format" aria-label="Repository map export format">
+              <option value="json">JSON</option>
+              <option value="graphml">GraphML</option>
+              <option value="dot">Graphviz DOT</option>
+              <option value="svg">SVG</option>
+            </select>
+            <button id="repository-map-export" class="secondary-button" type="button">Download</button>
           </div>
           <span class="muted repository-map-navigation-hint">Drag nodes to rearrange · drag empty canvas to pan · scroll to explore the full map</span>
         </div>

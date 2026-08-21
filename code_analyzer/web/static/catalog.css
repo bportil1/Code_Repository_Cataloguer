@@ -904,6 +904,16 @@ tbody tr:hover {
   min-width: 2.1rem;
 }
 
+.repository-map-export-group select {
+  padding: 0.35rem 0.5rem;
+  min-width: 7.5rem;
+}
+
+.visually-compact-label {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
 .repository-map-zoom-label {
   min-width: 3.2rem;
   text-align: center;

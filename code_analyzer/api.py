@@ -5,6 +5,7 @@ from typing import Iterable
 
 from .catalog.models import CatalogNode, ProjectCatalog
 from .catalog.similarity_adapter import compare_catalog_functions, graph_from_catalog
+from .network import build_reachable_call_network
 from .session import RepositorySessionManager
 from .similarity.clustering import cluster_common_factors, cluster_similarity_matrix
 from .similarity.duplicates import find_duplicate_candidates
@@ -73,6 +74,23 @@ class CodeAnalyzer:
 
     def graph(self, *, refresh: bool = False) -> FunctionGraph:
         return graph_from_catalog(self.catalog(refresh=refresh))
+
+    def call_network(
+        self,
+        focus_id: str,
+        *,
+        depth: int | None = None,
+        include_incoming: bool = True,
+        include_outgoing: bool = True,
+    ) -> dict:
+        """Return a reusable, cycle-safe reachable call-network artifact."""
+        return build_reachable_call_network(
+            self.catalog(refresh=False),
+            focus_id,
+            depth=depth,
+            include_incoming=include_incoming,
+            include_outgoing=include_outgoing,
+        )
 
     @staticmethod
     def similarity_config(
