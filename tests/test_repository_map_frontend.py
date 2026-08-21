@@ -48,3 +48,8 @@ def test_repository_map_supports_full_reachable_depth_and_graph_exports():
     assert "function graphMl(" in javascript
     assert "function dotGraph(" in javascript
     assert "new XMLSerializer().serializeToString" in javascript
+    assert "function inlineSvgPresentation(" in javascript
+    assert "window.getComputedStyle(sourceElement)" in javascript
+    assert '"fill",' in javascript
+    assert '"stroke",' in javascript
+    assert '"font-size",' in javascript

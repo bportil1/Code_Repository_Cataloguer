@@ -741,6 +741,40 @@
     return lines.join("\n");
   }
 
+  const svgPresentationProperties = [
+    "fill",
+    "fill-opacity",
+    "stroke",
+    "stroke-opacity",
+    "stroke-width",
+    "stroke-dasharray",
+    "stroke-linecap",
+    "stroke-linejoin",
+    "opacity",
+    "font-family",
+    "font-size",
+    "font-style",
+    "font-weight",
+    "letter-spacing",
+    "paint-order",
+    "text-anchor",
+    "dominant-baseline",
+  ];
+
+  function inlineSvgPresentation(sourceRoot, targetRoot) {
+    const sourceElements = [sourceRoot, ...sourceRoot.querySelectorAll("*")];
+    const targetElements = [targetRoot, ...targetRoot.querySelectorAll("*")];
+    sourceElements.forEach((sourceElement, index) => {
+      const targetElement = targetElements[index];
+      if (!targetElement) return;
+      const computed = window.getComputedStyle(sourceElement);
+      svgPresentationProperties.forEach(property => {
+        const value = computed.getPropertyValue(property);
+        if (value) targetElement.style.setProperty(property, value);
+      });
+    });
+  }
+
   function exportCurrentGraph(format) {
     const graphData = mapState.currentGraph;
     if (!graphData?.ids?.length) return;
@@ -750,6 +784,10 @@
       clone.setAttribute("xmlns", SVG_NS);
       clone.setAttribute("width", mapState.layout?.width || svg.getAttribute("width") || 1200);
       clone.setAttribute("height", mapState.layout?.height || svg.getAttribute("height") || 820);
+      // Resolve CSS variables/color-mix against the live page before serialization.
+      // Standalone SVG viewers do not reliably inherit the Analyzer page's :root
+      // custom properties, which otherwise turns nodes/text into SVG defaults.
+      inlineSvgPresentation(svg, clone);
       const style = document.createElementNS(SVG_NS, "style");
       const cssText = [];
       for (const sheet of document.styleSheets) {
