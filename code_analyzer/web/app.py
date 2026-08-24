@@ -27,7 +27,13 @@ def create_app(project_root: Path, extra_excludes=None, use_gitignore=True):
         html = (ROOT / "templates" / "report.html").read_text(encoding="utf-8")
         css = "\n".join(
             (ROOT / "static" / filename).read_text(encoding="utf-8")
-            for filename in ("catalog.css", "refactor.css", "similarity.css")
+            for filename in (
+                "catalog.css",
+                "refactor.css",
+                "similarity.css",
+                "pah-module-theme.css",
+                "pah-compat.css",
+            )
         )
         # Keep each module in its own script element. A repository-specific
         # rendering error in one view must not prevent repository controls or
