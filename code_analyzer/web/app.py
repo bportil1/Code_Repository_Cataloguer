@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from typing import Any, Callable
 
 from flask import Flask, jsonify, make_response, request
 
@@ -12,7 +13,13 @@ from code_analyzer import CodeAnalyzer
 ROOT = Path(__file__).resolve().parent
 
 
-def create_app(project_root: Path, extra_excludes=None, use_gitignore=True):
+def create_app(
+    project_root: Path,
+    extra_excludes=None,
+    use_gitignore=True,
+    *,
+    on_analysis: Callable[[CodeAnalyzer, str], Any] | None = None,
+):
     analyzer = CodeAnalyzer(
         project_root,
         extra_excludes=extra_excludes or set(),
@@ -20,6 +27,22 @@ def create_app(project_root: Path, extra_excludes=None, use_gitignore=True):
     )
 
     app = Flask(__name__)
+
+    def notify_analysis(event: str) -> None:
+        """Notify an optional host that this analyzer instance changed state.
+
+        The standalone application has no dependency on PAH. Hosts may inject
+        a callback when embedding the UI so they can synchronize their own
+        artifact/session state from this public ``CodeAnalyzer`` instance.
+        Callback failures are logged but never make standalone analyzer actions
+        fail.
+        """
+        if on_analysis is None:
+            return
+        try:
+            on_analysis(analyzer, str(event))
+        except Exception:
+            app.logger.exception("Analyzer host synchronization callback failed")
 
     @app.get("/")
     def index():
@@ -80,7 +103,9 @@ def create_app(project_root: Path, extra_excludes=None, use_gitignore=True):
     def repository_open():
         payload = request.get_json(silent=True) or {}
         try:
-            return jsonify(analyzer.open_repository(str(payload.get("path", ""))))
+            result = analyzer.open_repository(str(payload.get("path", "")))
+            notify_analysis("open")
+            return jsonify(result)
         except (OSError, TypeError, ValueError) as exc:
             return jsonify({"success": False, "error": str(exc)}), 400
         except Exception as exc:
@@ -93,7 +118,9 @@ def create_app(project_root: Path, extra_excludes=None, use_gitignore=True):
     @app.post("/api/repository/reload")
     def repository_reload():
         try:
-            return jsonify(analyzer.reload())
+            result = analyzer.reload()
+            notify_analysis("reload")
+            return jsonify(result)
         except Exception as exc:
             app.logger.exception("Repository reload failed")
             return jsonify({
@@ -229,6 +256,7 @@ def create_app(project_root: Path, extra_excludes=None, use_gitignore=True):
     app.extensions["code_analyzer"] = analyzer
     # Compatibility for code that inspected the old standalone Flask extension.
     app.extensions["repository_session_manager"] = analyzer._sessions
+    notify_analysis("initial")
     return app
 
 
