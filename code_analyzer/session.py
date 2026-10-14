@@ -6,6 +6,12 @@ from pathlib import Path
 from threading import RLock
 from typing import Iterable
 
+try:
+    from pah_jobs.exchange import observed as _monitor
+except ImportError:
+    def _monitor(owner, label):
+        return lambda function: function
+
 from code_analyzer.catalog.catalog_builder import build_catalog
 from code_analyzer.catalog.refactor.function_mover import FunctionMoveService
 
@@ -56,6 +62,7 @@ class RepositorySessionManager:
             raise ValueError(f"Repository path is not a directory: {root}")
         return root
 
+    @_monitor("code_analyzer", "Scan repository and build catalog")
     def _new_session(self, root: Path) -> RepositorySession:
         service = FunctionMoveService(
             root,

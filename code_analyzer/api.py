@@ -3,6 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable
 
+try:
+    from pah_jobs.exchange import observed as _monitor
+except ImportError:
+    def _monitor(owner, label):
+        return lambda function: function
+
 from .catalog.models import CatalogNode, ProjectCatalog
 from .catalog.similarity_adapter import compare_catalog_functions, graph_from_catalog
 from .network import build_reachable_call_network
@@ -60,6 +66,7 @@ class CodeAnalyzer:
             "session": self._sessions.status(),
         }
 
+    @_monitor("code_analyzer", "Repository catalog")
     def catalog(self, *, refresh: bool = False) -> ProjectCatalog:
         return self._sessions.current().service.catalog(refresh=refresh)
 
@@ -127,6 +134,7 @@ class CodeAnalyzer:
             external_import_weight=float(external_import_weight),
         )
 
+    @_monitor("code_analyzer", "Similarity matrix")
     def similarity_matrix(
         self,
         *,
@@ -199,6 +207,7 @@ class CodeAnalyzer:
             },
         }
 
+    @_monitor("code_analyzer", "Duplicate candidates")
     def duplicate_candidates(
         self,
         *,
