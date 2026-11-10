@@ -200,3 +200,30 @@ The standalone web interface now includes a three-pane Repository Map intended f
 The catalog also records `uses_import` relationships from functions/methods to imported modules or external packages when the imported binding is referenced inside that definition. This is separate from module-level `imports` relationships and is intended to answer which code symbols actually use a dependency.
 
 Similarity and duplication map lenses use the same context-depth, distance-decay, and external-import-weight controls as the existing similarity analyses.
+
+### P5-04 — Shared similarity matrix presentation
+
+The similarity matrix is rendered by the installed local `pah-shared>=0.3`
+component, not a second Code Analyzer table engine. Cell activation still
+opens the selected function-pair comparison. The old CSV button continues to
+export the complete, unfiltered matrix using PAH_Shared's CSV writer; the
+component's own controls additionally export filtered/sorted views and image
+and LaTeX formats. Source indexing and pairwise calculations remain owned
+by Code Analyzer. Install the local PAH_Shared wheel before starting the web
+UI. No external assets or services are required.
+
+## Rebuildable source evidence index
+
+The optional project-local SQLite source/symbol/dependency index supports
+bounded search and transparent refresh without replacing AST analysis or
+existing source-transform operations. See [P5-11 source index design](docs/P5_11_SOURCE_INDEX.md).
+
+### P5-12 similarity persistence and large matrices
+
+Similarity matrix, nearest-neighbor, duplicate, and cluster queries automatically
+reuse exact, repository-local measurements in `.codebase_catalog/similarity_pairs.sqlite3`.
+The cache is disposable and recomputed as needed; it never changes the matching
+algorithm or replaces source. For repositories with more than 80 functions, the
+matrix browser requests exact 25×25 windows rather than loading the whole matrix
+at once. The Download CSV button still exports the **complete** matrix.
+See `docs/P5_12_SIMILARITY_CACHE.md` for ownership, invalidation and limitations.

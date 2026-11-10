@@ -72,3 +72,6 @@ logs/
 
 *.tmp
 *.temp
+
+# Rebuildable repository-local source indexes and move-operation history
+.codebase_catalog/

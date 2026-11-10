@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from itertools import combinations
 from math import sqrt
-from typing import Any
+from typing import Any, Callable
 
 from .engine import FunctionGraph, SimilarityConfig, compare_functions
 
@@ -106,6 +106,7 @@ def find_duplicate_candidates(
     threshold: float = 0.65,
     limit: int = 50,
     factor_limit: int = 12,
+    scores: Callable[[str, str], tuple[float, float]] | None = None,
 ) -> dict[str, Any]:
     config = config or SimilarityConfig()
     config.validate()
@@ -125,8 +126,12 @@ def find_duplicate_candidates(
 
     for left_id, right_id in combinations(labels, 2):
         compared += 1
-        result = compare_functions(graph, left_id, right_id, config, include_pairs=False)
-        score = float(result.score)
+        if scores is None:
+            result = compare_functions(graph, left_id, right_id, config, include_pairs=False)
+            score, root_similarity = float(result.score), float(result.layers[0].node_similarity)
+        else:
+            score, root_similarity = scores(left_id, right_id)
+        score = float(score)
         all_scores.append(score)
         nearest_scores[left_id] = max(nearest_scores[left_id], score)
         nearest_scores[right_id] = max(nearest_scores[right_id], score)
@@ -134,17 +139,16 @@ def find_duplicate_candidates(
             continue
         duplicate_functions.update((left_id, right_id))
 
-        root_similarity = result.layers[0].node_similarity if result.layers else 0.0
         factors = _shared_factors(graph, left_id, right_id, factor_limit)
         candidates.append(
             DuplicateCandidate(
                 left_id=left_id,
                 right_id=right_id,
-                score=result.score,
+                score=score,
                 root_similarity=root_similarity,
                 shared_factor_count=len(graph.nodes[left_id].descriptor_counts().keys() & graph.nodes[right_id].descriptor_counts().keys()),
                 shared_factors=factors,
-                explanation=_explain(factors, root_similarity, result.score),
+                explanation=_explain(factors, root_similarity, score),
             )
         )
 

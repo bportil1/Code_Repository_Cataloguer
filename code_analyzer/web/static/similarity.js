@@ -167,6 +167,11 @@
   const matrixSummary = document.getElementById("similarity-matrix-summary");
   const matrixTable = document.getElementById("similarity-matrix-table");
   let latestMatrix = null;
+  let latestMatrixSettings = null;
+  const matrixWindowControls = document.getElementById('similarity-matrix-window-controls');
+  const matrixWindowRange = document.getElementById('similarity-matrix-window-range');
+  const matrixWindowSize = 25;
+  let matrixWindowBusy = false;
 
   function setSimilarityMode(mode) {
     const showPair = mode === "pair";
@@ -183,14 +188,6 @@
     if (clusterPanel) clusterPanel.hidden = !showClusters;
   }
 
-  function matrixClass(score) {
-    if (score >= .8) return "very-high";
-    if (score >= .6) return "high";
-    if (score >= .4) return "medium";
-    if (score >= .2) return "low";
-    return "very-low";
-  }
-
   function openMatrixPair(leftId, rightId) {
     left.value = leftId;
     right.value = rightId;
@@ -199,70 +196,107 @@
     runComparison();
   }
 
-  function renderMatrix(result) {
+  // The shared component owns every matrix cell and table interaction.
+  // Code Analyzer only publishes its numeric results and handles source navigation.
+  let sharedMatrixController = null;
+  let sharedMatrixSnapshot = null;
+  async function renderMatrix(result) {
     latestMatrix = result;
-    matrixDownload.disabled = false;
+    const isWindow = result.data_scope === 'window';
+    const rowLabels = isWindow ? result.row_labels : result.labels;
+    const columnLabels = isWindow ? result.column_labels : result.labels;
     const summary = result.summary;
-    matrixSummary.innerHTML = `
+    matrixSummary.innerHTML = isWindow ? `
+      <div class="matrix-summary-card"><strong>${result.total_functions}</strong><span>Total functions</span></div>
+      <div class="matrix-summary-card"><strong>${result.total_upper_triangle_pairs}</strong><span>Total possible upper-triangle pairs</span></div>
+      <div class="matrix-summary-card"><strong>${rowLabels.length} × ${columnLabels.length}</strong><span>Current exact window only</span></div>` : `
       <div class="matrix-summary-card"><strong>${summary.function_count}</strong><span>Functions</span></div>
       <div class="matrix-summary-card"><strong>${summary.computed_pair_count}</strong><span>Upper-triangle pairs</span></div>
       <div class="matrix-summary-card"><strong>${summary.mean_off_diagonal.toFixed(3)}</strong><span>Mean non-self score</span></div>
       <div class="matrix-summary-card"><strong>${summary.maximum_off_diagonal.toFixed(3)}</strong><span>Maximum non-self score</span></div>`;
-
-    matrixTable.innerHTML = "";
-    const thead = document.createElement("thead");
-    const headerRow = document.createElement("tr");
-    headerRow.appendChild(document.createElement("th"));
-    result.labels.forEach((id, index) => {
-      const th = document.createElement("th");
-      th.textContent = String(index + 1);
-      th.title = label(nodes.get(id) || { name: id });
-      headerRow.appendChild(th);
+    const columns = [{id:'symbol',title:'Function',kind:'text',export_title:'qualified_name'},
+      ...columnLabels.map((id,i) => ({id:`c${i}`,title:String((result.column_offset||0)+i+1),kind:'number',export_title:id,description:label(nodes.get(id)||{name:id})}))];
+    const rows = result.matrix.map((values,i) => ({id:`r${i}`,
+      values:{symbol:label(nodes.get(rowLabels[i])||{name:rowLabels[i]}),
+        ...Object.fromEntries(values.map((score,j)=>[`c${j}`,Number.isFinite(score)?score:null]))},
+      display_values:Object.fromEntries(values.map((score,j)=>[`c${j}`,Number.isFinite(score)?score.toFixed(2):'']))}));
+    sharedMatrixSnapshot = {schema_version:'1.0',data_scope:isWindow?'window':'complete',
+      source:{owner:'Code Analyzer',artifact_id:'similarity/matrix',revision:'current-computation'},
+      columns,rows,view:{page:{index:isWindow ? result.row_offset/matrixWindowSize : 0,size:25}},
+      capabilities:{export:!isWindow},
+      ...(isWindow ? {window:{offset:result.row_offset,total_filtered_rows:result.total_functions}} : {})};
+    const {mountTable} = await import('/pah-shared/table_component.mjs');
+    if (sharedMatrixController) sharedMatrixController.destroy();
+    sharedMatrixController = mountTable(matrixTable, sharedMatrixSnapshot,{
+      title:'Function similarity matrix',filename:'function_similarity_matrix',
+      onCellActivate: ({rowId,columnId}) => {
+        if (columnId==='symbol') return;
+        const i=Number(rowId.slice(1)),j=Number(columnId.slice(1));
+        if(Number.isSafeInteger(i)&&Number.isSafeInteger(j)&&rowLabels[i]&&columnLabels[j])
+          openMatrixPair(rowLabels[i],columnLabels[j]);
+      },
     });
-    thead.appendChild(headerRow);
-    matrixTable.appendChild(thead);
+    matrixPanel.dataset.windowed = String(isWindow);
+    matrixWindowControls.hidden = !isWindow;
+    if (isWindow) {
+      matrixWindowRange.textContent = `Rows ${result.row_offset+1}–${result.row_offset+rowLabels.length}, columns ${result.column_offset+1}–${result.column_offset+columnLabels.length} of ${result.total_functions}. Partial view; no approximation.`;
+      document.getElementById('similarity-matrix-row-prev').disabled = result.row_offset === 0;
+      document.getElementById('similarity-matrix-row-next').disabled = result.row_offset + matrixWindowSize >= result.total_functions;
+      document.getElementById('similarity-matrix-column-prev').disabled = result.column_offset === 0;
+      document.getElementById('similarity-matrix-column-next').disabled = result.column_offset + matrixWindowSize >= result.total_functions;
+    }
+    matrixDownload.disabled = false;
+  }
 
-    const tbody = document.createElement("tbody");
-    result.matrix.forEach((row, i) => {
-      const tr = document.createElement("tr");
-      const rowHeader = document.createElement("th");
-      const item = nodes.get(result.labels[i]);
-      rowHeader.textContent = `${i + 1}. ${label(item || { name: result.labels[i] })}`;
-      rowHeader.title = result.labels[i];
-      tr.appendChild(rowHeader);
-      row.forEach((score, j) => {
-        const td = document.createElement("td");
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = `matrix-score ${matrixClass(score)}`;
-        button.textContent = score.toFixed(2);
-        button.title = `${result.labels[i]} ↔ ${result.labels[j]}: ${score.toFixed(6)}`;
-        button.addEventListener("click", () => openMatrixPair(result.labels[i], result.labels[j]));
-        td.appendChild(button);
-        tr.appendChild(td);
+  async function fetchMatrixWindow(rowOffset = 0, columnOffset = 0) {
+    if (matrixWindowBusy) return;
+    matrixWindowBusy = true;
+    matrixWindowControls.querySelectorAll('button').forEach(button => button.disabled = true);
+    matrixStatus.textContent = 'Calculating selected matrix window…';
+    try {
+      const response = await fetch('/api/similarity/matrix-window', {
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          ...latestMatrixSettings,row_offset:rowOffset,row_limit:matrixWindowSize,
+          column_offset:columnOffset,column_limit:matrixWindowSize,
+        }),
       });
-      tbody.appendChild(tr);
-    });
-    matrixTable.appendChild(tbody);
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Matrix window unavailable.');
+      await renderMatrix(payload);
+      matrixStatus.textContent = 'Exact pairwise scores for the selected window. Other cells have not been evaluated.';
+    } catch(error) {
+      matrixStatus.textContent = `Matrix window failed: ${error.message}`;
+    } finally {
+      matrixWindowBusy = false;
+      if (latestMatrix?.data_scope === 'window') {
+        const {row_offset:row,column_offset:col,total_functions:total} = latestMatrix;
+        document.getElementById('similarity-matrix-row-prev').disabled = row === 0;
+        document.getElementById('similarity-matrix-row-next').disabled = row + matrixWindowSize >= total;
+        document.getElementById('similarity-matrix-column-prev').disabled = col === 0;
+        document.getElementById('similarity-matrix-column-next').disabled = col + matrixWindowSize >= total;
+      }
+    }
   }
 
   async function buildMatrix() {
     matrixBuild.disabled = true;
     matrixDownload.disabled = true;
-    matrixStatus.textContent = "Computing repository-wide similarities…";
+    latestMatrixSettings = {...similarityConfigFor('similarity-matrix-panel'),ordering:'qualified_name'};
+    matrixStatus.textContent = 'Computing similarities…';
     try {
-      const response = await fetch("/api/similarity/matrix", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...similarityConfigFor("similarity-matrix-panel"),
-          ordering: "qualified_name",
-        }),
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Matrix computation failed.");
-      renderMatrix(payload);
-      matrixStatus.textContent = `Complete: ${payload.summary.computed_pair_count} comparisons computed.`;
+      if (functionNodes.length > 80) {
+        await fetchMatrixWindow(0,0);
+      } else {
+        const response = await fetch('/api/similarity/matrix', {
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(latestMatrixSettings),
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || 'Matrix computation failed.');
+        await renderMatrix(payload);
+        matrixStatus.textContent = `Complete: ${payload.summary.computed_pair_count} exhaustive upper-triangle comparisons.`;
+      }
     } catch (error) {
       matrixStatus.textContent = `Matrix failed: ${error.message}`;
     } finally {
@@ -270,26 +304,44 @@
     }
   }
 
-  function downloadMatrixCsv() {
-    if (!latestMatrix) return;
-    const quote = value => `"${String(value).replaceAll('"', '""')}"`;
-    const lines = [
-      ["qualified_name", ...latestMatrix.labels].map(quote).join(","),
-      ...latestMatrix.matrix.map((row, index) =>
-        [latestMatrix.labels[index], ...row.map(value => value.toFixed(10))].map(quote).join(",")
-      ),
-    ];
-    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "function_similarity_matrix.csv";
-    anchor.click();
-    URL.revokeObjectURL(url);
+  async function downloadMatrixCsv() {
+    if (!sharedMatrixController) return;
+    if (latestMatrix?.data_scope === 'window') {
+      matrixDownload.disabled = true;
+      matrixStatus.textContent = 'Preparing full matrix CSV (all function pairs)…';
+      try {
+        const response = await fetch('/api/similarity/matrix.csv', {
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(latestMatrixSettings),
+        });
+        if(!response.ok) throw new Error((await response.json()).error || 'CSV export failed.');
+        const url=URL.createObjectURL(await response.blob());
+        const anchor=document.createElement('a');anchor.href=url;
+        anchor.download='function_similarity_matrix.csv';
+        document.body.appendChild(anchor);anchor.click();anchor.remove();
+        URL.revokeObjectURL(url);
+        matrixStatus.textContent='Downloaded complete matrix CSV, not just the displayed window.';
+      } catch(error) {
+        matrixStatus.textContent=`Complete matrix CSV failed: ${error.message}`;
+      } finally {matrixDownload.disabled=false;}
+      return;
+    }
+    // Existing small-matrix raw export remains owned by the shared component.
+    const {downloadTable} = await import('/pah-shared/table_exports.mjs');
+    const snapshot=sharedMatrixController.getSnapshot();
+    snapshot.view={search:'',filters:[],sort:[],page:{index:0,size:50}};
+    await downloadTable(snapshot,'csv',{filename:'function_similarity_matrix',title:'Function similarity matrix',rawNumeric:true});
   }
 
-
-
+  [['row-prev',-matrixWindowSize,0],['row-next',matrixWindowSize,0],
+    ['column-prev',0,-matrixWindowSize],['column-next',0,matrixWindowSize]].forEach(([name,rowDelta,columnDelta])=>{
+    document.getElementById(`similarity-matrix-${name}`)?.addEventListener('click',()=>{
+      if(latestMatrix?.data_scope!=='window') return;
+      const row=Math.max(0,latestMatrix.row_offset+rowDelta);
+      const col=Math.max(0,latestMatrix.column_offset+columnDelta);
+      fetchMatrixWindow(row,col);
+    });
+  });
 
   const duplicateBuild = document.getElementById("similarity-duplicate-build");
   const duplicateStatus = document.getElementById("similarity-duplicate-status");

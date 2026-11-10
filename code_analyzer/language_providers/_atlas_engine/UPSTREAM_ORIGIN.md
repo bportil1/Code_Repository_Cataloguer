@@ -1,0 +1,1 @@
+This directory is a copied snapshot of the ATLAS engine from user-supplied CPS-Analysis-Lab-main.zip, src/cps_lab/atlas. Files are preserved intact. The original CPS Lab standalone implementation remains unchanged. This parser provides structural, unverified evidence, not IEEE 716 compliance or hardware semantics.

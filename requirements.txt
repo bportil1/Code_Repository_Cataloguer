@@ -1,2 +1,5 @@
 -r requirements-core.txt
 Flask>=3.0,<4.0
+
+# Install from the local PAH_Shared source/wheel for the shared UI
+pah-shared>=0.3,<0.4

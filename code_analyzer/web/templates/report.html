@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Codebase Catalog</title>
+  <link rel="stylesheet" href="/pah-shared/table.css">
   <style>
 /*__CATALOG_CSS__*/
   </style>
@@ -321,8 +322,15 @@
         </section>
         <section class="panel">
           <div id="similarity-matrix-summary" class="matrix-summary"></div>
+          <div id="similarity-matrix-window-controls" class="similarity-matrix-window-controls" hidden>
+            <button type="button" id="similarity-matrix-row-prev">Previous rows</button>
+            <button type="button" id="similarity-matrix-row-next">Next rows</button>
+            <button type="button" id="similarity-matrix-column-prev">Previous columns</button>
+            <button type="button" id="similarity-matrix-column-next">Next columns</button>
+            <span id="similarity-matrix-window-range" aria-live="polite"></span>
+          </div>
           <div id="similarity-matrix-scroll" class="matrix-scroll">
-            <table id="similarity-matrix-table" class="similarity-matrix-table"></table>
+            <div id="similarity-matrix-table" class="similarity-matrix-table-shared"></div>
           </div>
         </section>
       </section>

@@ -8,6 +8,7 @@ from typing import Callable, Iterable, Sequence
 from .engine import FunctionGraph, SimilarityConfig, compare_functions
 
 ProgressCallback = Callable[[int, int, str], None]
+ScoreProvider = Callable[[str, str], tuple[float, float]]
 
 
 @dataclass(frozen=True)
@@ -58,6 +59,7 @@ def compute_similarity_matrix(
     labels: Sequence[str] | None = None,
     ordering: str = "qualified_name",
     progress: ProgressCallback | None = None,
+    scores: ScoreProvider | None = None,
 ) -> SimilarityMatrixResult:
     """
     Compute the global function-by-function matrix.
@@ -93,13 +95,9 @@ def compute_similarity_matrix(
             if i == j:
                 score = 1.0
             else:
-                score = compare_functions(
-                    graph,
-                    left,
-                    right,
-                    config,
-                    include_pairs=False,
-                ).score
+                score = (scores(left, right)[0] if scores is not None else compare_functions(
+                    graph, left, right, config, include_pairs=False,
+                ).score)
                 off_diagonal.append(score)
 
             matrix[i][j] = score

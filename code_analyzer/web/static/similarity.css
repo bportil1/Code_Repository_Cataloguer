@@ -202,3 +202,10 @@
 .duplication-metric-delta.improved { color: #15803d; }
 .duplication-metric-delta.worsened { color: #b91c1c; }
 .duplication-metric-delta.unchanged { color: var(--muted, #6b7280); }
+
+/* Large matrices use a server-side window. Never expose the shared table's
+ * local search, paging, or window exports as if they covered absent rows. */
+#similarity-matrix-panel[data-windowed="true"] #similarity-matrix-table .ps-controls,
+#similarity-matrix-panel[data-windowed="true"] #similarity-matrix-table .ps-pages {display:none}
+.similarity-matrix-window-controls:not([hidden]) {display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin:.6rem 0}
+.similarity-matrix-window-controls span {font-size:.85rem;color:var(--muted,#64748b)}

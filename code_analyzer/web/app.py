@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
-from flask import Flask, jsonify, make_response, request
+from flask import Flask, Response, abort, jsonify, make_response, request, stream_with_context
 
 from code_analyzer import CodeAnalyzer
 
@@ -43,6 +43,15 @@ def create_app(
             on_analysis(analyzer, str(event))
         except Exception:
             app.logger.exception("Analyzer host synchronization callback failed")
+
+    @app.get("/pah-shared/<asset>")
+    def shared_table_asset(asset: str):
+        """Serve the one installed offline table implementation, without copying it."""
+        if asset not in {"table.css", "table_view.mjs", "table_component.mjs", "table_exports.mjs"}:
+            abort(404)
+        from pah_shared import static_asset
+        mime = "text/css" if asset.endswith(".css") else "text/javascript"
+        return Response(static_asset(asset).read_bytes(), mimetype=mime)
 
     @app.get("/")
     def index():
@@ -170,6 +179,41 @@ def create_app(
             return jsonify(result.to_dict())
         except (KeyError, TypeError, ValueError) as exc:
             return jsonify({"error": str(exc)}), 400
+
+    @app.post("/api/similarity/matrix-window")
+    def similarity_matrix_window():
+        payload = request.get_json(silent=True) or {}
+        try:
+            return jsonify(analyzer.similarity_matrix_window(
+                row_offset=int(payload.get('row_offset', 0)),
+                row_limit=int(payload.get('row_limit', 25)),
+                column_offset=int(payload.get('column_offset', 0)),
+                column_limit=int(payload.get('column_limit', 25)),
+                context_depth=int(payload.get('context_depth', 1)),
+                distance_decay=float(payload.get('distance_decay', 0.5)),
+                external_import_weight=float(payload.get('external_import_weight', 0.20)),
+            ))
+        except (KeyError, TypeError, ValueError) as exc:
+            return jsonify({'error': str(exc)}), 400
+
+    @app.post("/api/similarity/matrix.csv")
+    def similarity_matrix_csv():
+        """Stream the entire numerical matrix, even if the UI shows one window."""
+        payload = request.get_json(silent=True) or {}
+        try:
+            settings = {
+                'context_depth': int(payload.get('context_depth', 1)),
+                'distance_decay': float(payload.get('distance_decay', 0.5)),
+                'external_import_weight': float(payload.get('external_import_weight', 0.20)),
+            }
+            analyzer.similarity_config(**settings)  # validate before streaming
+        except (TypeError, ValueError) as exc:
+            return jsonify({'error': str(exc)}), 400
+        response = Response(stream_with_context(analyzer.iter_similarity_matrix_csv(**settings)),
+                            mimetype='text/csv; charset=utf-8')
+        response.headers['Content-Disposition'] = 'attachment; filename="function_similarity_matrix.csv"'
+        response.headers['Cache-Control'] = 'no-store'
+        return response
 
     @app.post("/api/similarity/neighbors")
     def similarity_neighbors():

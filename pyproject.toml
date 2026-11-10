@@ -10,7 +10,7 @@ requires-python = ">=3.10"
 dependencies = ["numpy>=1.24,<3.0"]
 
 [project.optional-dependencies]
-web = ["Flask>=3.0,<4.0"]
+web = ["Flask>=3.0,<4.0", "pah-shared>=0.3,<0.4"]
 dev = ["pytest>=8"]
 
 [project.scripts]
