@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 from flask import Flask, Response, abort, jsonify, make_response, request, stream_with_context
 
-from code_analyzer import CodeAnalyzer
+from code_analyzer.api import CodeAnalyzer
 
 ROOT = Path(__file__).resolve().parent
 
