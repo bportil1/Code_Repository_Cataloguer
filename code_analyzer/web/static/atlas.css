@@ -1,0 +1,18 @@
+/* ATLAS provider: independent of Python catalog's semantics and state. */
+.atlas-intro { margin-bottom: 1rem; }
+.atlas-layout { display: grid; grid-template-columns: minmax(16rem, 0.85fr) minmax(23rem, 2fr); gap: 1rem; }
+.atlas-layout .panel { min-width: 0; }
+.atlas-layout input[type=search] { width: 100%; margin: 0.4rem 0 0.75rem; padding: 0.55rem; }
+.atlas-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin: 0.5rem 0; }
+.atlas-file-list { max-height: 31rem; overflow: auto; display: grid; gap: 0.25rem; }
+.atlas-file-entry { text-align: left; overflow-wrap: anywhere; padding: 0.45rem 0.6rem; }
+.atlas-file-entry[aria-selected=true] { border-color: var(--accent); background: var(--accent-soft); }
+.atlas-node-list { overflow: auto; max-height: 29rem; border: 1px solid var(--border); border-radius: 0.5rem; }
+.atlas-node-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.atlas-node-table th, .atlas-node-table td { text-align: left; border-bottom: 1px solid var(--border); padding: 0.45rem; }
+.atlas-node-table button { text-align: left; border: 0; background: transparent; text-decoration: underline; }
+.atlas-node-detail { margin: 0.7rem 0; padding: 0.7rem; border: 1px solid var(--border); border-radius: 0.5rem; }
+.atlas-overview-list { display: flex; gap: 0.7rem; flex-wrap: wrap; margin: 0 0 1rem; }
+.atlas-overview-list span { border: 1px solid var(--border); border-radius: 0.4rem; padding: 0.35rem 0.5rem; }
+.atlas-diagnostics { overflow-wrap: anywhere; max-height: 15rem; overflow-y: auto; }
+@media (max-width: 850px) { .atlas-layout { grid-template-columns: 1fr; } }

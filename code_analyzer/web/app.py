@@ -28,6 +28,10 @@ def create_app(
 
     app = Flask(__name__)
 
+    # UCA: expose the existing CPS Lab ATLAS provider in standalone Code Analyzer.
+    from .atlas_routes import register_atlas_routes
+    register_atlas_routes(app, analyzer)
+
     def notify_analysis(event: str) -> None:
         """Notify an optional host that this analyzer instance changed state.
 
@@ -65,6 +69,7 @@ def create_app(
                 "similarity.css",
                 "pah-module-theme.css",
                 "pah-compat.css",
+                "atlas.css",
             )
         )
         # Keep each module in its own script element. A repository-specific
@@ -80,6 +85,7 @@ def create_app(
                 "refactor.js",
                 "similarity.js",
                 "repository_session.js",
+                "atlas.js",
             )
         )
         data = json.dumps(catalog, ensure_ascii=False).replace("</", "<\\/")

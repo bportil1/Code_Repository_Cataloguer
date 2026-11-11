@@ -40,6 +40,7 @@
     <button class="tab" data-view="dependencies">Dependencies</button>
     <button class="tab" data-view="definitions">Definitions</button>
     <button class="tab" data-view="similarity">Similarity</button>
+    <button class="tab" data-view="atlas">ATLAS · CPS</button>
   </nav>
 
   <main>
@@ -145,6 +146,43 @@
         </div>
         <div id="details" class="empty-state">Select a repository node.</div>
       </aside>
+    </section>
+
+    <section id="atlas-view" class="view" aria-label="CPS Lab ATLAS source analysis">
+      <section class="panel atlas-intro">
+        <h2>ATLAS source analysis · CPS Analysis Lab</h2>
+        <p class="muted">Uses the integrated CPS Analysis Lab ATLAS parser for .as, .atl and .atlas sources in the currently opened repository. Parsing is read-only. Statements, operations, symbols and references are <strong>structural candidates</strong>; they do not establish verified IEEE 716 grammar, execution order or hardware connectivity.</p>
+        <p class="muted">Python catalog, similarity and refactoring views remain Python-only. Open a repository containing ATLAS files to inspect those files here.</p>
+      </section>
+      <div class="atlas-layout">
+        <section class="panel atlas-files-panel">
+          <h3>ATLAS files</h3>
+          <label for="atlas-filter">Filter paths</label>
+          <input id="atlas-filter" type="search" placeholder="e.g. program.as">
+          <div class="atlas-actions">
+            <button id="atlas-refresh" type="button">Find files</button>
+            <button id="atlas-analyze" type="button" disabled>Analyze selected</button>
+          </div>
+          <p id="atlas-files-status" class="muted" role="status">Choose Find files to scan the current repository.</p>
+          <div id="atlas-file-list" class="atlas-file-list" role="listbox" aria-label="ATLAS source files"></div>
+          <div class="atlas-actions">
+            <button id="atlas-prev" type="button" disabled>Previous</button>
+            <span id="atlas-page-label" class="muted"></span>
+            <button id="atlas-next" type="button" disabled>Next</button>
+          </div>
+        </section>
+        <section class="panel atlas-results-panel">
+          <h3>Structural analysis</h3>
+          <p id="atlas-analysis-status" class="muted" role="status">Select an ATLAS source file to run the CPS parser.</p>
+          <div id="atlas-overview"></div>
+          <label for="atlas-node-search">Filter structural nodes</label>
+          <input id="atlas-node-search" type="search" placeholder="Kind, name or line">
+          <div id="atlas-node-list" class="atlas-node-list"></div>
+          <div id="atlas-node-detail" class="atlas-node-detail" aria-live="polite"></div>
+          <h3>Parser diagnostics</h3>
+          <div id="atlas-diagnostics" class="atlas-diagnostics muted">No analysis yet.</div>
+        </section>
+      </div>
     </section>
 
     <section id="dependencies-view" class="view">
