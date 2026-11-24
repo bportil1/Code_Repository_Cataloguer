@@ -75,3 +75,22 @@ logs/
 
 # Rebuildable repository-local source indexes and move-operation history
 .codebase_catalog/
+
+# PAH and local tool generated outputs at this repository root. These are NOT
+# source packages named `analysis` within other directories.
+/analysis/
+/.pah/
+/runtime/
+/tmp/
+/cache/
+/exports/
+/scratch/
+/.xml-extractions/
+
+# Local SQLite journals/sidecars; keep intentionally versioned DB fixtures.
+*.sqlite3-wal
+*.sqlite3-shm
+*.sqlite3-journal
+*.db-wal
+*.db-shm
+*.db-journal
