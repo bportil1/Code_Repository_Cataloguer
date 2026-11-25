@@ -17,7 +17,7 @@ dev = ["pytest>=8"]
 code-catalog-report = "code_analyzer.cli:main"
 
 [project.entry-points."pah.runtimes"]
-code_analyzer = "code_analyzer.integrations.pah:CodeAnalyzerRuntimeAdapter"
+code_analyzer = "code_analyzer.integrations.pah:create_runtime_adapter"
 
 [tool.setuptools.packages.find]
 include = ["code_analyzer*", "catalog*"]

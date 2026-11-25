@@ -85,3 +85,13 @@ class CodeAnalyzerRuntimeAdapter:
             "requested_port": 0,
             "ui_path": "/",
         }
+
+
+def create_runtime_adapter() -> CodeAnalyzerRuntimeAdapter:
+    """Return a fresh, bound adapter for the ``pah.runtimes`` entry point.
+
+    Runtime registration must not publish a Python class with unbound instance
+    descriptors; this factory also supports older PAH hosts that treat a
+    callable entry point as a no-argument constructor.
+    """
+    return CodeAnalyzerRuntimeAdapter()

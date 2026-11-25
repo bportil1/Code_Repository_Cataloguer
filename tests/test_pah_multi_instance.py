@@ -104,7 +104,7 @@ def test_packaged_entrypoint_declared_and_runtime_outputs_ignored():
     import tomllib
     root = Path(__file__).parents[1]
     config = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
-    assert config["project"]["entry-points"]["pah.runtimes"]["code_analyzer"] == "code_analyzer.integrations.pah:CodeAnalyzerRuntimeAdapter"
+    assert config["project"]["entry-points"]["pah.runtimes"]["code_analyzer"] == "code_analyzer.integrations.pah:create_runtime_adapter"
     ignores = (root / ".gitignore").read_text()
     for pattern in ("/analysis/", "/.pah/", "/runtime/", "/scratch/", "*.db-wal"):
         assert pattern in ignores
@@ -156,3 +156,28 @@ def test_two_real_processes_keep_separate_repository_bindings(tmp_path):
             if child.poll() is None:
                 child.terminate()
             child.communicate(timeout=5)
+
+
+def test_runtime_entrypoint_factory_yields_a_bound_status_method(tmp_path, monkeypatch):
+    from code_analyzer.integrations.pah import (
+        CodeAnalyzerRuntimeAdapter, create_runtime_adapter,
+    )
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    first = create_runtime_adapter()
+    second = create_runtime_adapter()
+    assert isinstance(first, CodeAnalyzerRuntimeAdapter)
+    assert first is not second
+    assert first.module_id == "code_analyzer"
+    assert first.status.__self__ is first
+    context = {"resources": {"repository": repo}}
+    status = first.status(context=context)
+    assert status["module_id"] == "code_analyzer"
+    assert "available" in status
+    from code_analyzer.integrations import pah as adapter_module
+    # The web extra is optional and CI may lack Flask. Exercise the launch
+    # contract without installing or contacting any external service.
+    monkeypatch.setattr(adapter_module, "find_spec", lambda package: object())
+    spec = first.process_launch_spec(context=context)
+    assert spec["command"][-1] == "code_analyzer.process_ui"
+    assert spec["requested_port"] == 0
