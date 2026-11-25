@@ -785,7 +785,9 @@ tbody tr:hover {
 
 /* Repository comprehension map */
 .repository-map-layout {
-  grid-template-columns: minmax(16rem, 24%) minmax(30rem, 1fr) minmax(18rem, 26%);
+  /* The map gets the full row; repository tree and inspector remain available
+     below, instead of squeezing the graph between two narrow sidebars. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
   align-items: start;
 }
@@ -801,8 +803,13 @@ tbody tr:hover {
 }
 
 .repository-map-panel {
-  min-height: 76vh;
+  grid-column: 1 / -1;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
 }
+.repository-tree-panel { grid-column: 1; grid-row: 2; }
+.repository-inspector-panel { grid-column: 2; grid-row: 2; }
 
 .compact-copy {
   margin: 0.2rem 0 0;
@@ -929,18 +936,15 @@ tbody tr:hover {
 .repository-map-canvas-wrap {
   position: relative;
   margin-top: 0.65rem;
-  height: 36rem;
-  min-height: 24rem;
+  height: max(36rem, 68vh);
+  min-height: 28rem;
   overflow: auto;
   overscroll-behavior: contain;
-  border: 1px solid var(--border);
+  border: 1px solid #b6c8d9;
   border-radius: 0.75rem;
-  background:
-    linear-gradient(var(--border) 1px, transparent 1px),
-    linear-gradient(90deg, var(--border) 1px, transparent 1px),
-    var(--panel);
-  background-size: 32px 32px;
-  background-position: -1px -1px;
+  /* No graph-paper grid: keep the visual vocabulary of pyPIQUE's map. */
+  background: #f7fafd;
+  color-scheme: light;
   cursor: grab;
   scrollbar-gutter: stable both-edges;
 }
@@ -1090,20 +1094,21 @@ tbody tr:hover {
 }
 
 .repository-map-node rect {
-  fill: var(--panel);
-  stroke: var(--border);
-  stroke-width: 2;
+  fill: #ffffff;
+  stroke: #93abc0;
+  stroke-width: 1.8;
+  filter: drop-shadow(0 2px 3px rgba(24, 61, 94, .11));
 }
 
 .repository-map-node text {
-  fill: var(--text);
+  fill: #193650;
   font-size: 14px;
   font-weight: 650;
   pointer-events: none;
 }
 
 .repository-map-node .repository-map-node-kind {
-  fill: var(--muted);
+  fill: #526a7d;
   font-size: 10px;
   font-weight: 500;
   text-transform: uppercase;
@@ -1115,27 +1120,32 @@ tbody tr:hover {
 }
 
 .repository-map-node.focus rect {
-  fill: var(--accent-soft);
-  stroke: var(--accent);
+  fill: #eaf4fc;
+  stroke: #207db4;
   stroke-width: 3;
 }
 
 .repository-map-node-external rect {
-  stroke: #9a6a12;
+  fill: #fff7e8;
+  stroke: #ae7c28;
   stroke-dasharray: 5 3;
 }
 
 .repository-map-node-module rect {
-  fill: color-mix(in srgb, var(--panel) 88%, var(--accent-soft));
+  fill: #e9f4fc;
+  stroke: #578bb0;
 }
 
 .repository-map-node-class rect {
-  fill: color-mix(in srgb, var(--panel) 90%, #6b5fb5 10%);
+  fill: #f0edfc;
+  stroke: #8c81bf;
 }
 
 .repository-map-node-method rect,
 .repository-map-node-function rect {
   rx: 18;
+  fill: #e9f6f2;
+  stroke: #4e9b87;
 }
 
 .symbol-glance-grid {
@@ -1162,16 +1172,84 @@ tbody tr:hover {
   font-size: 0.72rem;
 }
 
-@media (max-width: 1200px) {
-  .repository-map-layout {
-    grid-template-columns: minmax(15rem, 28%) minmax(0, 1fr);
-  }
+/* The repository tree and code inspector never displace the map itself. */
 
-  .repository-inspector-panel {
-    grid-column: 1 / -1;
-    max-height: none;
-  }
+/* Calm layer-role colors match the visual vocabulary of the pyPIQUE map,
+   without changing the semantics of Code Analyzer's source relationships. */
+.map-node-legend { display: inline-block; width: .9rem; height: .9rem; border: 1.5px solid #578bb0; border-radius: 4px; background: #e9f4fc; }
+.map-node-legend.class { background: #f0edfc; border-color: #8c81bf; }
+.map-node-legend.function { background: #e9f6f2; border-color: #4e9b87; }
+.map-node-legend.external { background: #fff7e8; border-color: #ae7c28; }
+
+/* Map presentation parity with pyPIQUE: full-window exploration retains
+   Code Analyzer's original lenses, dragging, inspector and exports. */
+.repository-map-navigation-group > button { white-space: nowrap; }
+.repository-map-navigation-group button[aria-pressed="true"] {
+  background: #dceef9;
+  border-color: #297dad;
+  color: #164365;
 }
+.repository-map-navigation-group button:focus-visible {
+  outline: 2px solid #207db4;
+  outline-offset: 2px;
+}
+.repository-map-inline-inspector { margin-top: .45rem; color: #304c64; font-size: .85rem; }
+.repository-map-inline-inspector summary { cursor: pointer; font-weight: 650; }
+.repository-map-inline-inspector pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 12rem;
+  overflow: auto;
+  background: #edf5fa;
+  border: 1px solid #c4d4e0;
+  border-radius: .5rem;
+  padding: .6rem .8rem;
+  color: #173650;
+}
+.repository-map-panel:fullscreen,
+.repository-map-panel.repository-map-expanded {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  max-height: none;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  border-radius: 0;
+  padding: .85rem 1rem;
+  margin: 0;
+  background: #eef4f8;
+  color: #173650;
+  color-scheme: light;
+}
+.repository-map-panel:fullscreen .repository-map-canvas-wrap,
+.repository-map-panel.repository-map-expanded .repository-map-canvas-wrap {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 12rem;
+  margin-top: .6rem;
+}
+.repository-map-panel:fullscreen .repository-map-heading,
+.repository-map-panel.repository-map-expanded .repository-map-heading { flex: 0 0 auto; }
+.repository-map-panel:fullscreen .repository-map-navigation,
+.repository-map-panel.repository-map-expanded .repository-map-navigation { flex: 0 0 auto; }
+.repository-map-panel:fullscreen .repository-map-inline-inspector,
+.repository-map-panel.repository-map-expanded .repository-map-inline-inspector { flex: 0 0 auto; }
+body.repository-map-viewport-locked { overflow: hidden; }
+/* A new map window gets a map-first view but retains the independent
+   repository tree and symbol inspector underneath. */
+body.repository-map-window .topbar,
+body.repository-map-window #summary,
+body.repository-map-window .tabs,
+body.repository-map-window main > .view:not(#repository-view) { display: none !important; }
+body.repository-map-window main,
+body.repository-map-window #repository-view { width: 100%; max-width: none; margin: 0; }
+body.repository-map-window #repository-view { padding: .6rem; }
+body.repository-map-window .repository-map-canvas-wrap { height: max(32rem, 78vh); }
+body.repository-map-window .repository-map-panel { box-shadow: 0 5px 24px rgba(20,50,80,.08); }
 
 @media (max-width: 850px) {
   .repository-map-layout.active {

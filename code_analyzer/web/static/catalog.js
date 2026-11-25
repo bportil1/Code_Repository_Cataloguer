@@ -1152,5 +1152,9 @@
   };
 
   renderDefinitions();
-  showNodeDetails(catalog.root_node_id);
+  const focusFromWindow = new URLSearchParams(window.location.search).get("map_focus");
+  const initialFocus = window.location.search.includes("repository_map_window=1") && nodes.has(focusFromWindow)
+    ? focusFromWindow : catalog.root_node_id;
+  state.selectedNodeId = initialFocus;
+  showNodeDetails(initialFocus);
 })();

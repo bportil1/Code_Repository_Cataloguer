@@ -111,17 +111,24 @@
             <button id="repository-map-fit" class="secondary-button" type="button">Fit map</button>
             <button id="repository-map-reset-layout" class="secondary-button" type="button">Reset layout</button>
           </div>
+          <div class="repository-map-navigation-group" aria-label="Map presentation">
+            <button id="repository-map-highlight" class="secondary-button" type="button" aria-pressed="false" title="Keep direct neighbors of the selected symbol highlighted">Highlight neighbors</button>
+            <button id="repository-map-fullscreen" class="secondary-button" type="button" aria-pressed="false">Fullscreen map</button>
+            <button id="repository-map-new-window" class="secondary-button" type="button">New map window</button>
+          </div>
           <div class="repository-map-navigation-group repository-map-export-group">
             <label for="repository-map-export-format" class="visually-compact-label">Export</label>
             <select id="repository-map-export-format" aria-label="Repository map export format">
               <option value="json">JSON</option>
               <option value="graphml">GraphML</option>
               <option value="dot">Graphviz DOT</option>
-              <option value="svg">SVG</option>
+              <option value="svg">Visible map · SVG</option>
+              <option value="png">Visible map · PNG</option>
+              <option value="csv">Visible edges · CSV</option>
             </select>
             <button id="repository-map-export" class="secondary-button" type="button">Download</button>
           </div>
-          <span class="muted repository-map-navigation-hint">Drag nodes to rearrange · drag empty canvas to pan · scroll to explore the full map</span>
+          <span class="muted repository-map-navigation-hint">Click a node to inspect · drag nodes to arrange · drag background to pan · Ctrl+scroll to zoom</span>
         </div>
 
         <div id="repository-map-canvas-wrap" class="repository-map-canvas-wrap">
@@ -129,7 +136,15 @@
           <div id="repository-map-empty" class="repository-map-empty" hidden></div>
         </div>
         <div id="repository-map-status" class="repository-map-status muted" aria-live="polite"></div>
-        <div class="repository-map-legend">
+        <details id="repository-map-inspector" class="repository-map-inline-inspector">
+          <summary>Selected symbol details</summary>
+          <pre id="repository-map-inspector-text">Select a node in the repository map.</pre>
+        </details>
+        <div class="repository-map-legend" aria-label="Graph relationship and node key">
+          <span><i class="map-node-legend module"></i> module</span>
+          <span><i class="map-node-legend class"></i> class</span>
+          <span><i class="map-node-legend function"></i> function / method</span>
+          <span><i class="map-node-legend external"></i> external</span>
           <span><i class="map-legend-line calls"></i> call</span>
           <span><i class="map-legend-line imports"></i> import use</span>
           <span><i class="map-legend-line similarity"></i> similarity</span>

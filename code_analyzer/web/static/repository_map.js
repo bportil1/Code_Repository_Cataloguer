@@ -8,10 +8,17 @@
   const nodes = new Map(Object.entries(catalog.nodes || {}));
   const relationships = catalog.relationships || [];
   const functionTypes = new Set(["function", "method"]);
+  const mapQuery = new URLSearchParams(window.location.search);
+  const isMapWindow = mapQuery.get("repository_map_window") === "1";
+  if (isMapWindow) document.body.classList.add("repository-map-window");
+  const initialFocus = mapQuery.get("map_focus");
+  const savedLens = mapQuery.get("map_lens");
+  const knownLenses = new Set(["structure", "calls", "imports", "similarity", "duplication"]);
   const mapState = {
-    selectedId: catalog.root_node_id,
-    viewMode: "symbol",
-    lens: "structure",
+    selectedId: nodes.has(initialFocus) ? initialFocus : catalog.root_node_id,
+    viewMode: mapQuery.get("map_view") === "call-path" ? "call-path" : "symbol",
+    lens: knownLenses.has(savedLens) ? savedLens : "structure",
+    persistentHighlight: false,
     requestSerial: 0,
     zoom: 1,
     layout: null,
@@ -24,6 +31,28 @@
     pan: null,
   };
   const neighborCache = new Map();
+  // Detaching loads the same standalone Code Analyzer report, with independent
+  // controls and the selected node/lens carried through. No graph semantics
+  // or source artifacts are serialized into an unsafe HTML popup.
+  if (isMapWindow) {
+    const depth = mapQuery.get("map_depth");
+    if (["1", "2", "3", "5", "10", "all"].includes(depth))
+      document.getElementById("repository-map-depth").value = depth;
+    for (const [param, id] of [
+      ["map_incoming", "repository-map-incoming"],
+      ["map_outgoing", "repository-map-outgoing"],
+    ]) if (mapQuery.has(param)) document.getElementById(id).checked = mapQuery.get(param) === "1";
+    for (const [param, id] of [
+      ["map_similarity_depth", "repository-map-similarity-depth"],
+      ["map_decay", "repository-map-decay"],
+      ["map_import_weight", "repository-map-import-weight"],
+      ["map_duplicate_threshold", "repository-map-duplicate-threshold"],
+    ]) {
+      const value = mapQuery.get(param);
+      const control = document.getElementById(id);
+      if (value !== null && control && Number.isFinite(Number(value))) control.value = value;
+    }
+  }
 
   const outgoing = new Map();
   const incoming = new Map();
@@ -580,6 +609,20 @@
     viewport.scrollTop = Math.max(0, (mapState.layout.height * mapState.zoom - viewport.clientHeight) / 2);
   }
 
+  function refreshInlineInspector() {
+    const target = document.getElementById("repository-map-inspector-text");
+    if (!target) return;
+    const selected = item(mapState.selectedId);
+    const source = selected?.metadata || {};
+    target.textContent = selected ? JSON.stringify({
+      node_id: selected.id, type: selected.node_type,
+      label: label(selected.id), qualified_name: selected.qualified_name || null,
+      source_path: selected.path || source.path || null,
+      line_start: source.line_start ?? selected.line_start ?? null,
+      line_end: source.line_end ?? selected.line_end ?? null,
+    }, null, 2) : "Select a node in the repository map.";
+  }
+
   function clearHighlight() {
     mapState.nodeElements.forEach(group => group.classList.remove("dimmed"));
     mapState.edgeElements.forEach(({ line, label }) => {
@@ -601,6 +644,12 @@
       line.classList.toggle("dimmed", !active);
       label?.classList.toggle("dimmed", !active);
     });
+  }
+
+  function restoreSelectionHighlight() {
+    if (mapState.persistentHighlight && mapState.currentGraph?.ids.includes(mapState.selectedId))
+      highlightNeighborhood(mapState.selectedId);
+    else clearHighlight();
   }
 
   function openNode(nodeId) {
@@ -775,11 +824,7 @@
     });
   }
 
-  function exportCurrentGraph(format) {
-    const graphData = mapState.currentGraph;
-    if (!graphData?.ids?.length) return;
-    const base = `${safeFilename(catalog.project_name)}-${safeFilename(mapState.viewMode === "call-path" ? "call-path" : mapState.lens)}`;
-    if (format === "svg") {
+  function serializeVisibleSvg() {
       const clone = svg.cloneNode(true);
       clone.setAttribute("xmlns", SVG_NS);
       clone.setAttribute("width", mapState.layout?.width || svg.getAttribute("width") || 1200);
@@ -797,12 +842,74 @@
       }
       style.textContent = cssText.join("\n");
       clone.insertBefore(style, clone.firstChild);
-      const content = `<?xml version="1.0" encoding="UTF-8"?>\n${new XMLSerializer().serializeToString(clone)}`;
-      downloadText(`${base}.svg`, content, "image/svg+xml;charset=utf-8");
+      return `<?xml version="1.0" encoding="UTF-8"?>\n${new XMLSerializer().serializeToString(clone)}`;
+  }
+
+  function csvValue(value) {
+    const raw = value === null || value === undefined ? "" : String(value);
+    return `"${raw.replaceAll('"', '""')}"`;
+  }
+
+  function downloadBlob(filename, blob) {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function exportVisiblePng(filename) {
+    const source = new Blob([serializeVisibleSvg()], {type: "image/svg+xml;charset=utf-8"});
+    const url = URL.createObjectURL(source);
+    const image = new Image();
+    try {
+      await new Promise((resolve, reject) => {
+        image.onload = resolve;
+        image.onerror = () => reject(new Error("SVG image could not be rasterized."));
+        image.src = url;
+      });
+      const width = Math.ceil(mapState.layout?.width || 1200);
+      const height = Math.ceil(mapState.layout?.height || 820);
+      const canvas = document.createElement("canvas");
+      canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas 2D export is unavailable in this browser.");
+      ctx.fillStyle = "#f7fafd";
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(image, 0, 0, width, height);
+      const png = await new Promise((resolve, reject) =>
+        canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("PNG encoding failed.")), "image/png"));
+      downloadBlob(filename, png);
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  function exportCurrentGraph(format) {
+    const graphData = mapState.currentGraph;
+    if (!graphData?.ids?.length) return;
+    const base = `${safeFilename(catalog.project_name)}-${safeFilename(mapState.viewMode === "call-path" ? "call-path" : mapState.lens)}`;
+    if (format === "svg") {
+      downloadText(`${base}.svg`, serializeVisibleSvg(), "image/svg+xml;charset=utf-8");
       return;
     }
-
+    if (format === "png") {
+      exportVisiblePng(`${base}.png`).catch(error => {
+        const status = document.getElementById("repository-map-status");
+        status.textContent = `PNG export unavailable: ${error.message}. Try SVG instead.`;
+      });
+      return;
+    }
     const payload = canonicalNetworkPayload(graphData);
+    if (format === "csv") {
+      const fields = ["source_id", "target_id", "relationship_type", "score"];
+      const rows = payload.edges.map(edge => fields.map(field => csvValue(edge[field])).join(","));
+      downloadText(`${base}-edges.csv`, [fields.join(","), ...rows].join("\n") + "\n", "text/csv;charset=utf-8");
+      return;
+    }
     if (format === "graphml") {
       downloadText(`${base}.graphml`, graphMl(payload), "application/graphml+xml;charset=utf-8");
     } else if (format === "dot") {
@@ -825,6 +932,7 @@
     const status = document.getElementById("repository-map-status");
     const context = document.getElementById("repository-map-context");
     const selected = item(mapState.selectedId);
+    refreshInlineInspector();
     context.textContent = selected
       ? `${qualifiedLabel(selected.id)} · ${mapState.viewMode === "call-path" ? "call path" : mapState.lens}`
       : "Repository map";
@@ -927,7 +1035,7 @@
         if (!mapState.drag) highlightNeighborhood(nodeId);
       });
       group.addEventListener("pointerleave", () => {
-        if (!mapState.drag) clearHighlight();
+        if (!mapState.drag) restoreSelectionHighlight();
       });
       group.addEventListener("pointerdown", event => {
         if (event.button !== 0) return;
@@ -964,7 +1072,7 @@
         mapState.drag = null;
         group.classList.remove("dragging");
         try { group.releasePointerCapture(event.pointerId); } catch (_) { /* already released */ }
-        clearHighlight();
+        restoreSelectionHighlight();
         if (!moved) openNode(nodeId);
       };
       group.addEventListener("pointerup", finishDrag);
@@ -987,7 +1095,10 @@
     svg.appendChild(nodeLayer);
     updateGeometry();
 
-    requestAnimationFrame(() => centerOnNode(visualFocusId));
+    requestAnimationFrame(() => {
+      centerOnNode(visualFocusId);
+      restoreSelectionHighlight();
+    });
   }
 
   function updateControls() {
@@ -1062,6 +1173,88 @@
   ].forEach(id => {
     const control = document.getElementById(id);
     control?.addEventListener("change", () => renderMap());
+  });
+
+  const mapPanel = document.querySelector(".repository-map-panel");
+  const fullscreenButton = document.getElementById("repository-map-fullscreen");
+  let wasFullscreen = false;
+  let preFullscreenCamera = null;
+  function refreshFullscreenButton() {
+    const active = document.fullscreenElement === mapPanel ||
+      mapPanel.classList.contains("repository-map-expanded");
+    if (active && !wasFullscreen) {
+      preFullscreenCamera = {
+        zoom: mapState.zoom,
+        left: viewport.scrollLeft,
+        top: viewport.scrollTop,
+      };
+    }
+    fullscreenButton.setAttribute("aria-pressed", String(active));
+    fullscreenButton.textContent = active ? "Exit fullscreen" : "Fullscreen map";
+    document.body.classList.toggle("repository-map-viewport-locked", active);
+    if (active && !wasFullscreen) requestAnimationFrame(() => fitMap());
+    if (!active && wasFullscreen && preFullscreenCamera) {
+      const old = preFullscreenCamera;
+      requestAnimationFrame(() => {
+        setZoom(old.zoom, false);
+        viewport.scrollLeft = old.left;
+        viewport.scrollTop = old.top;
+      });
+      preFullscreenCamera = null;
+    }
+    wasFullscreen = active;
+  }
+  fullscreenButton?.addEventListener("click", async () => {
+    if (document.fullscreenElement === mapPanel) {
+      await document.exitFullscreen();
+    } else if (mapPanel.classList.contains("repository-map-expanded")) {
+      mapPanel.classList.remove("repository-map-expanded");
+    } else if (typeof mapPanel.requestFullscreen === "function") {
+      try { await mapPanel.requestFullscreen(); }
+      catch (_) { mapPanel.classList.add("repository-map-expanded"); }
+    } else {
+      mapPanel.classList.add("repository-map-expanded");
+    }
+    refreshFullscreenButton();
+  });
+  document.addEventListener("fullscreenchange", refreshFullscreenButton);
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && mapPanel.classList.contains("repository-map-expanded")) {
+      mapPanel.classList.remove("repository-map-expanded");
+      refreshFullscreenButton();
+    }
+  });
+
+  document.getElementById("repository-map-new-window")?.addEventListener("click", () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("repository_map_window", "1");
+    url.searchParams.set("map_focus", mapState.selectedId);
+    url.searchParams.set("map_view", mapState.viewMode);
+    url.searchParams.set("map_lens", mapState.lens);
+    for (const [name, id] of [
+      ["map_depth", "repository-map-depth"],
+      ["map_similarity_depth", "repository-map-similarity-depth"],
+      ["map_decay", "repository-map-decay"],
+      ["map_import_weight", "repository-map-import-weight"],
+      ["map_duplicate_threshold", "repository-map-duplicate-threshold"],
+    ]) url.searchParams.set(name, document.getElementById(id).value);
+    url.searchParams.set("map_incoming", document.getElementById("repository-map-incoming").checked ? "1" : "0");
+    url.searchParams.set("map_outgoing", document.getElementById("repository-map-outgoing").checked ? "1" : "0");
+    // A fresh same-origin report keeps the complete independent map behavior
+    // (lenses, source navigation, exports), not a static SVG snapshot.
+    const opened = window.open(url.toString(), "_blank");
+    if (opened) {
+      try { opened.opener = null; } catch (_) { /* hardened browsing contexts */ }
+    } else {
+      document.getElementById("repository-map-status").textContent =
+        "New map window was blocked; allow popups for this local Code Analyzer address.";
+    }
+  });
+
+  document.getElementById("repository-map-highlight")?.addEventListener("click", event => {
+    mapState.persistentHighlight = !mapState.persistentHighlight;
+    event.currentTarget.setAttribute("aria-pressed", String(mapState.persistentHighlight));
+    restoreSelectionHighlight();
   });
 
   document.getElementById("repository-map-zoom-in")?.addEventListener("click", () => {
